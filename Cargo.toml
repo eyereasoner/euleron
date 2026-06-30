@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 authors = ["Jos De Roo"]
 license = "MIT"
-description = "A Rust Notation3 reasoner."
+description = "A native Rust Notation3 reasoner with RDF Messages as a primary integration target."
 repository = "https://github.com/eyereasoner/eyeron"
 
 [lib]

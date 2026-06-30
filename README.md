@@ -1,6 +1,6 @@
 # Eyeron
 
-Eyeron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`.
+Eyeron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`. The native integration target for structured RDF exchange is RDF Messages.
 
 Eyeron is the Rust reasoner. **Eyeling** is the JavaScript reasoner in the same Eyereasoner family; this package intentionally uses the `eyeron` crate name and `eyeron` executable name to keep the two projects distinct.
 
@@ -78,7 +78,7 @@ cargo run -- --help
 cargo run -- --version
 ```
 
-Accepted compatibility flags include `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. Some compatibility flags are accepted as no-ops or warnings so command lines from the JavaScript Eyeling CLI are easier to try with Eyeron.
+The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. Flags that are not implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 
@@ -139,6 +139,20 @@ fn run(input: &str) -> eyeron::Result<String> {
 }
 ```
 
+
+## RDF Messages
+
+RDF Messages support is a primary integration goal for Eyeron. The intent is to make Eyeron useful as a native Rust reasoner in RDF message pipelines, not as a browser/WASM package or an RDF-JS data-model adapter.
+
+Planned RDF Messages work includes:
+
+- reading RDF Messages as an input stream;
+- writing derived RDF Messages as an output stream;
+- preserving message boundaries where possible;
+- mapping supported N3/RDF terms into the message representation without going through JavaScript object models.
+
+The current first release focuses on N3 file input/output and the bundled example suite. RDF Messages support should be treated as the next important integration layer.
+
 ## Testing
 
 Run the full validation suite with:
@@ -187,12 +201,16 @@ cargo run -- examples/deep-taxonomy-100000.n3
 
 The reasoner maintains indexes for grounded fact lookup and includes a fast agenda path for safe single-premise forward rules. This keeps long taxonomy chains close to linear in practice. Recursive and blank-node-heavy state-machine examples can still require more selective scheduling.
 
+## Non-goals
+
+Eyeron does not target browser compatibility or RDF-JS compatibility. Those belong naturally to JavaScript environments. Eyeron targets native Rust execution, command-line use, embedding from Rust, and RDF Messages integration.
+
 ## Current limitations
 
 This first release focuses on the core reasoning path and the bundled example suite. The following areas are intentionally limited or incomplete:
 
 - full RDF 1.2 / TriG parsing modes;
-- RDF-JS-compatible data model APIs;
+- RDF Messages streaming input/output is not yet complete;
 - external URL dereferencing;
 - persistent fact stores;
 - proof trace comments and full explanation output;
