@@ -1,0 +1,21 @@
+[package]
+name = "eyeling"
+version = "0.1.0"
+edition = "2021"
+authors = ["Jos De Roo"]
+license = "MIT"
+description = "A core Notation3 reasoner in Rust."
+repository = "https://github.com/eyereasoner/eyeling"
+
+[lib]
+name = "eyeling"
+path = "src/lib.rs"
+
+[[bin]]
+name = "eyeling"
+path = "src/main.rs"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true

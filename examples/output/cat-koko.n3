@@ -1,0 +1,17 @@
+@prefix : <https://eyereasoner.github.io/ns#> .
+@prefix log: <http://www.w3.org/2000/10/swap/log#> .
+@prefix rdf: <http://www.w3.org/1999/02/22-rdf-syntax-ns#> .
+
+{
+    :Koko a :Animal .
+} => {
+    _:x a :Cat .
+} .
+{
+    :Koko a :Animal .
+} => {
+    _:x a :BritishShortHair .
+} .
+_:sk_0 a :Cat .
+_:sk_1 a :BritishShortHair .
+:test :is true .

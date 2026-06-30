@@ -1,0 +1,4 @@
+@prefix : <http://example.org/socrates#> .
+
+:result :is :Post .
+:test :is true .

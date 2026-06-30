@@ -1,0 +1,4 @@
+@prefix : <http://example.org/socrates#> .
+
+:Socrates :is _:sk_0 .
+:Plato :is _:sk_1 .

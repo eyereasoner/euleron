@@ -1,0 +1,3 @@
+@prefix : <http://example.org/expression-eval#> .
+
+:Root :result 12 .
