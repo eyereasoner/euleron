@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::{EyelingError, Result};
+use crate::error::{EyeronError, Result};
 use crate::lexer::{lex, Token, TokenKind};
 
 pub fn parse_n3(input: &str, base_iri: Option<&str>) -> Result<Document> {
@@ -44,12 +44,12 @@ impl Parser {
         let t = self.advance().clone();
         let name = match t.kind {
             TokenKind::PName(p) => p.strip_suffix(':').unwrap_or(&p).to_string(),
-            _ => return Err(EyelingError::at("expected prefix name", t.offset)),
+            _ => return Err(EyeronError::at("expected prefix name", t.offset)),
         };
         let iri_tok = self.advance().clone();
         let iri = match iri_tok.kind {
             TokenKind::Iri(i) => i,
-            _ => return Err(EyelingError::at("expected prefix IRI", iri_tok.offset)),
+            _ => return Err(EyeronError::at("expected prefix IRI", iri_tok.offset)),
         };
         self.doc.prefixes.insert(name, iri);
         self.expect_dot()?;
@@ -61,7 +61,7 @@ impl Parser {
         let iri_tok = self.advance().clone();
         let iri = match iri_tok.kind {
             TokenKind::Iri(i) => i,
-            _ => return Err(EyelingError::at("expected base IRI", iri_tok.offset)),
+            _ => return Err(EyeronError::at("expected base IRI", iri_tok.offset)),
         };
         self.doc.base_iri = Some(iri);
         self.expect_dot()?;
@@ -81,7 +81,7 @@ impl Parser {
                 let rhs = self.parse_formula_or_true()?;
                 self.doc.rules.push(Rule { premise: rhs, conclusion: Vec::new(), is_forward: false });
             }
-            _ => return Err(EyelingError::at("expected => or <= after true", self.peek().offset)),
+            _ => return Err(EyeronError::at("expected => or <= after true", self.peek().offset)),
         }
         self.expect_dot()?;
         Ok(())
@@ -110,7 +110,7 @@ impl Parser {
                         self.doc.rules.push(Rule { premise: lhs, conclusion: rhs, is_forward: true });
                     }
                     other => {
-                        return Err(EyelingError::at(
+                        return Err(EyeronError::at(
                             format!("expected =>, <=, or log:query after formula, got {:?}", other),
                             self.peek().offset,
                         ));
@@ -146,9 +146,9 @@ impl Parser {
         // the rule fires.
         let (term, generated) = self.parse_term()?;
         if !generated.is_empty() {
-            return Err(EyelingError::new("generated triples cannot appear around an unquoted RHS term"));
+            return Err(EyeronError::new("generated triples cannot appear around an unquoted RHS term"));
         }
-        Ok(vec![Triple::new(Term::iri(EYELING_UNQUOTE), Term::iri(EYELING_UNQUOTE), term)])
+        Ok(vec![Triple::new(Term::iri(EYERON_UNQUOTE), Term::iri(EYERON_UNQUOTE), term)])
     }
 
     fn parse_formula(&mut self) -> Result<Vec<Triple>> {
@@ -159,7 +159,7 @@ impl Parser {
             triples.extend(self.parse_triples_sequence()?);
             if self.check(&TokenKind::Dot) { self.advance(); }
             else if !self.check(&TokenKind::RBrace) {
-                return Err(EyelingError::at("expected '.' or '}' in formula", self.peek().offset));
+                return Err(EyeronError::at("expected '.' or '}' in formula", self.peek().offset));
             }
         }
         self.expect(TokenKind::RBrace)?;
@@ -236,7 +236,7 @@ impl Parser {
         }
         let (term, generated) = self.parse_term()?;
         if !generated.is_empty() {
-            return Err(EyelingError::new("generated blank/list triples cannot be used as predicates"));
+            return Err(EyeronError::new("generated blank/list triples cannot be used as predicates"));
         }
         Ok(term)
     }
@@ -259,7 +259,7 @@ impl Parser {
             }
             TokenKind::LBracket => self.parse_blank_node_property_list(),
             TokenKind::LParen => self.parse_list(),
-            other => Err(EyelingError::at(format!("expected term, got {:?}", other), tok.offset)),
+            other => Err(EyeronError::at(format!("expected term, got {:?}", other), tok.offset)),
         }
     }
 
@@ -268,10 +268,10 @@ impl Parser {
         if self.check(&TokenKind::HatHat) {
             self.advance();
             let (dt, generated) = self.parse_term()?;
-            if !generated.is_empty() { return Err(EyelingError::new("datatype cannot generate triples")); }
+            if !generated.is_empty() { return Err(EyeronError::new("datatype cannot generate triples")); }
             match dt {
                 Term::Iri(i) => lit.datatype = Some(i),
-                _ => return Err(EyelingError::new("datatype must be an IRI")),
+                _ => return Err(EyeronError::new("datatype must be an IRI")),
             }
         } else if let TokenKind::Lang(lang) = self.peek_kind() {
             lit.language = Some(lang.clone());
@@ -305,10 +305,10 @@ impl Parser {
 
     fn expand_pname(&self, pname: &str, offset: usize) -> Result<String> {
         let Some((prefix, local)) = pname.split_once(':') else {
-            return Err(EyelingError::at(format!("unknown bare name '{}'; use a prefix or <IRI>", pname), offset));
+            return Err(EyeronError::at(format!("unknown bare name '{}'; use a prefix or <IRI>", pname), offset));
         };
         let Some(base) = self.doc.prefixes.get(prefix) else {
-            return Err(EyelingError::at(format!("unknown prefix '{}:'", prefix), offset));
+            return Err(EyeronError::at(format!("unknown prefix '{}:'", prefix), offset));
         };
         Ok(format!("{}{}", base, local))
     }
@@ -336,7 +336,7 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(EyelingError::at(format!("expected {:?}, got {:?}", expected, self.peek_kind()), self.peek().offset))
+            Err(EyeronError::at(format!("expected {:?}, got {:?}", expected, self.peek_kind()), self.peek().offset))
         }
     }
 

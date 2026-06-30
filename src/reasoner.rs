@@ -366,7 +366,7 @@ fn emit_conclusions(
 }
 
 fn is_unquote_instruction(t: &Triple) -> bool {
-    matches!((&t.s, &t.p), (Term::Iri(s), Term::Iri(p)) if s == EYELING_UNQUOTE && p == EYELING_UNQUOTE)
+    matches!((&t.s, &t.p), (Term::Iri(s), Term::Iri(p)) if s == EYERON_UNQUOTE && p == EYERON_UNQUOTE)
 }
 
 fn insert_materialized_triple(
@@ -1042,7 +1042,7 @@ fn eval_collect_all_in(
     let Term::Formula(clause_triples) = parts[1].clone() else { return Vec::new(); };
     let result_template = parts[2].clone();
 
-    // Eyeling treats a blank-node result slot as an existence check only.
+    // Eyeron treats a blank-node result slot as an existence check only.
     if matches!(result_template, Term::Blank(_)) {
         return vec![bindings.clone()];
     }

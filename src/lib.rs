@@ -1,4 +1,4 @@
-//! Rust port of Eyeling's core Notation3 forward reasoner.
+//! Eyeron core Notation3 reasoner.
 //!
 //! This crate intentionally keeps the public API small: parse one or more N3
 //! sources, run forward-chaining rules, and render newly-derived triples.
@@ -11,7 +11,7 @@ pub mod printing;
 pub mod reasoner;
 
 pub use ast::{Document, Literal, Rule, Term, Triple};
-pub use error::{EyelingError, Result};
+pub use error::{EyeronError, Result};
 pub use parser::parse_n3;
 pub use printing::{document_debug, result_to_string, triples_to_n3};
 pub use reasoner::{reason as reason_document, ReasonerOptions, ReasonerResult};

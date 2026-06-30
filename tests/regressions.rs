@@ -1,4 +1,4 @@
-use eyeling::{parse_n3, reason, reason_document, result_to_string, ReasonerOptions};
+use eyeron::{parse_n3, reason, reason_document, result_to_string, ReasonerOptions};
 
 fn check_golden_non_prefix_lines(name: &str, source: &str, golden: &str) -> std::result::Result<(), String> {
     let out = reason(source).map_err(|err| format!("{} failed: {}", name, err))?;

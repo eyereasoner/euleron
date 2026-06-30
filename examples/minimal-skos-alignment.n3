@@ -11,7 +11,7 @@
 #   anpr:PassengerCar     ex:treatedAs ref:Car .
 #
 # Run (example):
-#   eyeling minimal-skos-alignment.n3
+#   eyeron minimal-skos-alignment.n3
 # ------------------------------------------------------------
 
 @prefix ex:   <http://example.org/#> .

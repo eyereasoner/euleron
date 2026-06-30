@@ -1,18 +1,18 @@
 [package]
-name = "eyeling"
+name = "eyeron"
 version = "0.1.0"
 edition = "2021"
 authors = ["Jos De Roo"]
 license = "MIT"
-description = "A core Notation3 reasoner in Rust."
-repository = "https://github.com/eyereasoner/eyeling"
+description = "A Rust Notation3 reasoner."
+repository = "https://github.com/eyereasoner/eyeron"
 
 [lib]
-name = "eyeling"
+name = "eyeron"
 path = "src/lib.rs"
 
 [[bin]]
-name = "eyeling"
+name = "eyeron"
 path = "src/main.rs"
 
 [profile.release]

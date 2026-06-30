@@ -1,15 +1,17 @@
-# Eyeling
+# Eyeron
 
-Eyeling is a small Rust implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes the derived output as N3 or direct text produced by `log:outputString`.
+Eyeron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`.
+
+Eyeron is the Rust reasoner. **Eyeling** is the JavaScript reasoner in the same Eyereasoner family; this package intentionally uses the `eyeron` crate name and `eyeron` executable name to keep the two projects distinct.
 
 The crate provides both:
 
-- a command-line program named `eyeling`; and
+- a command-line program named `eyeron`; and
 - a library API for embedding the reasoner in Rust applications.
 
 ## Features
 
-Eyeling currently supports the core constructs used by the bundled examples:
+Eyeron currently supports the core constructs used by the bundled examples:
 
 - prefixes and bases with common default N3/RDF prefixes;
 - triples, variables, blank nodes, blank-node property lists, literals, RDF lists, and quoted formulas;
@@ -21,15 +23,15 @@ Eyeling currently supports the core constructs used by the bundled examples:
 - `=` as `owl:sameAs`;
 - RDF list matching through first-class list terms and virtual `rdf:first` / `rdf:rest`;
 - deterministic generated blank nodes for repeated rule firings;
-- an indexed fact store and agenda path for single-premise rules, including large taxonomy-style rule chains.
+- indexed fact lookup and an agenda path for safe single-premise rule chains.
 
 Implemented built-in families include a practical subset of:
 
-- `log:`: equality, inequality, query, collect/conjunction/conclusion helpers, URI conversion, scoped formula operations used by the examples;
-- `math:`: sum, difference, numeric comparisons, numeric equality/inequality;
-- `list:`: first, rest, firstRest, last, length, member, memberAt, in, notMember, remove, append, reverse, sort, iterate, map;
+- `log:`: equality, inequality, query, collect/conjunction/conclusion helpers, URI conversion, and scoped formula operations used by the examples;
+- `math:`: sum, difference, numeric comparisons, and numeric equality/inequality;
+- `list:`: first, rest, firstRest, last, length, member, memberAt, in, notMember, remove, append, reverse, sort, iterate, and map;
 - `string:`: comparison, concatenation, containment, starts/ends-with, regex match/not-match, replace, scrape, and simple formatting;
-- `time:`: year, month, day, hour, minute, second, time zone extraction.
+- `time:`: year, month, day, hour, minute, second, and time-zone extraction.
 
 ## Build
 
@@ -40,7 +42,7 @@ cargo build --release
 The optimized binary will be available at:
 
 ```bash
-target/release/eyeling
+target/release/eyeron
 ```
 
 ## Command-line use
@@ -49,6 +51,12 @@ Run an example:
 
 ```bash
 cargo run -- examples/witch.n3
+```
+
+After a release build, run the binary directly:
+
+```bash
+target/release/eyeron examples/witch.n3
 ```
 
 Run multiple input files as one merged document:
@@ -70,7 +78,7 @@ cargo run -- --help
 cargo run -- --version
 ```
 
-Accepted compatibility flags include `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. Some compatibility flags are currently accepted as no-ops or warnings so existing command lines are easier to migrate.
+Accepted compatibility flags include `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. Some compatibility flags are accepted as no-ops or warnings so command lines from the JavaScript Eyeling CLI are easier to try with Eyeron.
 
 ## Example
 
@@ -98,11 +106,11 @@ Output:
 
 ## Library use
 
-Add the crate as a dependency from this repository or workspace, then call `eyeling::reason`:
+Add the crate as a dependency from this repository or workspace, then call `eyeron::reason`:
 
 ```rust
-fn main() -> eyeling::Result<()> {
-    let output = eyeling::reason(r#"
+fn main() -> eyeron::Result<()> {
+    let output = eyeron::reason(r#"
       @prefix : <http://example.org/> .
 
       :Socrates a :Man .
@@ -122,9 +130,9 @@ fn main() -> eyeling::Result<()> {
 For lower-level use, parse first and call the reasoner directly:
 
 ```rust
-use eyeling::{parse_n3, reason_document, result_to_string, ReasonerOptions};
+use eyeron::{parse_n3, reason_document, result_to_string, ReasonerOptions};
 
-fn run(input: &str) -> eyeling::Result<String> {
+fn run(input: &str) -> eyeron::Result<String> {
     let doc = parse_n3(input, None)?;
     let result = reason_document(&doc, &ReasonerOptions::default());
     Ok(result_to_string(&doc.prefixes, &result.derived))

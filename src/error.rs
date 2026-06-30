@@ -1,12 +1,12 @@
 use std::fmt;
 
 #[derive(Debug, Clone)]
-pub struct EyelingError {
+pub struct EyeronError {
     pub message: String,
     pub offset: Option<usize>,
 }
 
-impl EyelingError {
+impl EyeronError {
     pub fn new(message: impl Into<String>) -> Self {
         Self { message: message.into(), offset: None }
     }
@@ -43,14 +43,14 @@ fn line_col(source: &str, offset: usize) -> (usize, usize) {
     (line, col)
 }
 
-impl fmt::Display for EyelingError {
+impl fmt::Display for EyeronError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result { write!(f, "{}", self.message) }
 }
 
-impl std::error::Error for EyelingError {}
+impl std::error::Error for EyeronError {}
 
-impl From<std::io::Error> for EyelingError {
+impl From<std::io::Error> for EyeronError {
     fn from(value: std::io::Error) -> Self { Self::new(value.to_string()) }
 }
 
-pub type Result<T> = std::result::Result<T, EyelingError>;
+pub type Result<T> = std::result::Result<T, EyeronError>;

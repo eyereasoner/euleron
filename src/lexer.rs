@@ -1,4 +1,4 @@
-use crate::error::{EyelingError, Result};
+use crate::error::{EyeronError, Result};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -118,14 +118,14 @@ impl<'a> Lexer<'a> {
                 return Ok(());
             }
             if ch == '\\' {
-                let Some(esc) = self.peek() else { return Err(EyelingError::at("unterminated IRI escape", offset)); };
+                let Some(esc) = self.peek() else { return Err(EyeronError::at("unterminated IRI escape", offset)); };
                 self.bump();
                 value.push(esc);
             } else {
                 value.push(ch);
             }
         }
-        Err(EyelingError::at("unterminated IRI reference", offset))
+        Err(EyeronError::at("unterminated IRI reference", offset))
     }
 
     fn read_string(&mut self) -> Result<()> {
@@ -135,7 +135,7 @@ impl<'a> Lexer<'a> {
         if triple { self.bump(); self.bump(); }
         let mut value = String::new();
         loop {
-            let Some(ch) = self.peek() else { return Err(EyelingError::at("unterminated string literal", offset)); };
+            let Some(ch) = self.peek() else { return Err(EyeronError::at("unterminated string literal", offset)); };
             self.bump();
             if ch == quote {
                 if triple {
@@ -150,7 +150,7 @@ impl<'a> Lexer<'a> {
                     return Ok(());
                 }
             } else if ch == '\\' {
-                let Some(esc) = self.peek() else { return Err(EyelingError::at("unterminated string escape", offset)); };
+                let Some(esc) = self.peek() else { return Err(EyeronError::at("unterminated string escape", offset)); };
                 self.bump();
                 match esc {
                     'n' => value.push('\n'),
@@ -197,7 +197,7 @@ impl<'a> Lexer<'a> {
             self.bump();
         }
         if word.is_empty() {
-            return Err(EyelingError::at(format!("unexpected character {:?}", self.peek()), offset));
+            return Err(EyeronError::at(format!("unexpected character {:?}", self.peek()), offset));
         }
         let kind = match word.as_str() {
             "@prefix" => TokenKind::AtPrefix,
