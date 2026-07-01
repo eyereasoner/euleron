@@ -204,6 +204,18 @@ impl Parser {
     fn new(tokens: Vec<Token>, base_iri: Option<&str>) -> Self {
         let mut doc = Document::new();
         doc.base_iri = base_iri.map(ToOwned::to_owned);
+        // The notation3tests static corpus uses the standard N3/RDF prefixes
+        // in a few files without redeclaring every one of them.  Seed the
+        // conventional prefixes while still letting explicit declarations
+        // override them.
+        doc.prefixes.insert("rdf".to_string(), "http://www.w3.org/1999/02/22-rdf-syntax-ns#".to_string());
+        doc.prefixes.insert("rdfs".to_string(), "http://www.w3.org/2000/01/rdf-schema#".to_string());
+        doc.prefixes.insert("xsd".to_string(), "http://www.w3.org/2001/XMLSchema#".to_string());
+        doc.prefixes.insert("log".to_string(), "http://www.w3.org/2000/10/swap/log#".to_string());
+        doc.prefixes.insert("list".to_string(), "http://www.w3.org/2000/10/swap/list#".to_string());
+        doc.prefixes.insert("math".to_string(), "http://www.w3.org/2000/10/swap/math#".to_string());
+        doc.prefixes.insert("string".to_string(), "http://www.w3.org/2000/10/swap/string#".to_string());
+        doc.prefixes.insert("time".to_string(), "http://www.w3.org/2000/10/swap/time#".to_string());
         Self { tokens, pos: 0, doc, blank_counter: 0 }
     }
 
@@ -234,11 +246,14 @@ impl Parser {
         };
         let iri_tok = self.advance().clone();
         let iri = match iri_tok.kind {
-            TokenKind::Iri(i) => i,
+            TokenKind::Iri(i) => self.resolve_iri(&i),
             _ => return Err(EyeronError::at("expected prefix IRI", iri_tok.offset)),
         };
         self.doc.prefixes.insert(name, iri);
-        self.expect_dot()?;
+        // Turtle-style PREFIX inside formulas does not require a trailing dot.
+        // @prefix still normally has one; accepting it optionally here keeps the
+        // parser permissive for the conformance corpus.
+        if self.check(&TokenKind::Dot) { self.advance(); }
         Ok(())
     }
 
@@ -246,11 +261,11 @@ impl Parser {
         self.advance();
         let iri_tok = self.advance().clone();
         let iri = match iri_tok.kind {
-            TokenKind::Iri(i) => i,
+            TokenKind::Iri(i) => self.resolve_iri(&i),
             _ => return Err(EyeronError::at("expected base IRI", iri_tok.offset)),
         };
         self.doc.base_iri = Some(iri);
-        self.expect_dot()?;
+        if self.check(&TokenKind::Dot) { self.advance(); }
         Ok(())
     }
 
@@ -267,7 +282,11 @@ impl Parser {
                 let rhs = self.parse_formula_or_true()?;
                 self.doc.rules.push(Rule { premise: rhs, conclusion: Vec::new(), is_forward: false });
             }
-            _ => return Err(EyeronError::at("expected => or <= after true", self.peek().offset)),
+            _ => {
+                // `true false true .` is a valid N3 triple with boolean terms.
+                let facts = self.parse_triples_sequence_from_subject(boolean_literal(true))?;
+                self.doc.facts.extend(facts);
+            }
         }
         self.expect_dot()?;
         Ok(())
@@ -296,10 +315,36 @@ impl Parser {
                         self.doc.rules.push(Rule { premise: lhs, conclusion: rhs, is_forward: true });
                     }
                     other => {
-                        return Err(EyeronError::at(
-                            format!("expected =>, <=, or log:query after formula, got {:?}", other),
-                            self.peek().offset,
-                        ));
+                        // Otherwise the leading formula is an ordinary term subject, e.g.
+                        // `{ :A :B :C } a :Statement .` or a formula-valued predicate.
+                        let subject = Term::formula(lhs);
+                        let mut triples = Vec::new();
+                        loop {
+                            loop {
+                                let (object, mut generated) = self.parse_term()?;
+                                triples.push(Triple::new(subject.clone(), other.clone(), object));
+                                triples.append(&mut generated);
+                                if self.check(&TokenKind::Comma) { self.advance(); continue; }
+                                break;
+                            }
+                            if self.check(&TokenKind::Semicolon) {
+                                while self.check(&TokenKind::Semicolon) { self.advance(); }
+                                if matches!(self.peek_kind(), TokenKind::Dot | TokenKind::RBrace | TokenKind::RBracket) { break; }
+                                let next_pred = self.parse_verb()?;
+                                let mut more = Vec::new();
+                                loop {
+                                    let (object, mut generated) = self.parse_term()?;
+                                    more.push(Triple::new(subject.clone(), next_pred.clone(), object));
+                                    more.append(&mut generated);
+                                    if self.check(&TokenKind::Comma) { self.advance(); continue; }
+                                    break;
+                                }
+                                triples.extend(more);
+                                break;
+                            }
+                            break;
+                        }
+                        self.doc.facts.extend(triples);
                     }
                 }
             }
@@ -314,6 +359,9 @@ impl Parser {
             self.advance();
             return Ok(Vec::new());
         }
+        if matches!(self.peek_kind(), TokenKind::Boolean(false)) {
+            return Err(EyeronError::at("false rule conclusions are not supported", self.peek().offset));
+        }
         self.parse_formula()
     }
 
@@ -321,6 +369,9 @@ impl Parser {
         if matches!(self.peek_kind(), TokenKind::Boolean(true)) {
             self.advance();
             return Ok(Vec::new());
+        }
+        if matches!(self.peek_kind(), TokenKind::Boolean(false)) {
+            return Err(EyeronError::at("false rule conclusions are not supported", self.peek().offset));
         }
         if matches!(self.peek_kind(), TokenKind::LBrace) {
             return self.parse_formula();
@@ -342,6 +393,14 @@ impl Parser {
         let mut triples = Vec::new();
         while !self.check(&TokenKind::RBrace) && !self.check(&TokenKind::Eof) {
             if self.check(&TokenKind::Dot) { self.advance(); continue; }
+            if matches!(self.peek_kind(), TokenKind::AtPrefix | TokenKind::Prefix) {
+                self.parse_prefix()?;
+                continue;
+            }
+            if matches!(self.peek_kind(), TokenKind::AtBase | TokenKind::Base) {
+                self.parse_base()?;
+                continue;
+            }
             triples.extend(self.parse_triples_sequence()?);
             if self.check(&TokenKind::Dot) { self.advance(); }
             else if !self.check(&TokenKind::RBrace) {
@@ -349,6 +408,12 @@ impl Parser {
             }
         }
         self.expect(TokenKind::RBrace)?;
+        Ok(triples)
+    }
+
+    fn parse_triples_sequence_from_subject(&mut self, subject: Term) -> Result<Vec<Triple>> {
+        let mut triples = Vec::new();
+        triples.extend(self.parse_predicate_object_list(subject)?);
         Ok(triples)
     }
 
@@ -365,6 +430,12 @@ impl Parser {
             let backward = self.check(&TokenKind::BackArrow);
             self.advance();
             let (object, mut object_generated) = self.parse_term()?;
+            if is_boolean_false_term(&object) {
+                return Err(EyeronError::at("false rule conclusions are not supported", self.peek().offset));
+            }
+            if matches!((&subject, &object), (Term::Formula(_), Term::Var(_))) {
+                return Err(EyeronError::at("formula-to-variable implication is not supported", self.peek().offset));
+            }
             let object = if is_boolean_true_term(&object) { Term::Formula(Vec::new()) } else { object };
             triples.append(&mut object_generated);
             if backward {
@@ -385,14 +456,48 @@ impl Parser {
         let mut triples = Vec::new();
         loop {
             if matches!(self.peek_kind(), TokenKind::Dot | TokenKind::RBrace | TokenKind::RBracket) { break; }
-            let predicate = self.parse_verb()?;
-            loop {
-                let (object, mut generated) = self.parse_term()?;
-                triples.push(Triple::new(subject.clone(), predicate.clone(), object));
-                triples.append(&mut generated);
-                if self.check(&TokenKind::Comma) { self.advance(); continue; }
-                break;
+
+            // N3 reverse-property path: `S <- :p O` means `O :p S`.
+            if self.check(&TokenKind::Reverse) {
+                self.advance();
+                let predicate = self.parse_verb()?;
+                loop {
+                    let (object, mut generated) = self.parse_term()?;
+                    triples.push(Triple::new(object, predicate.clone(), subject.clone()));
+                    triples.append(&mut generated);
+                    if self.check(&TokenKind::Comma) { self.advance(); continue; }
+                    break;
+                }
             }
+            // N3 alternate spelling: `S is :p of O` means `O :p S`.
+            else if self.peek_is_bare("is") {
+                self.advance();
+                let predicate = self.parse_verb()?;
+                if !self.peek_is_bare("of") {
+                    return Err(EyeronError::at("expected 'of' after 'is <predicate>'", self.peek().offset));
+                }
+                self.advance();
+                loop {
+                    let (object, mut generated) = self.parse_term()?;
+                    triples.push(Triple::new(object, predicate.clone(), subject.clone()));
+                    triples.append(&mut generated);
+                    if self.check(&TokenKind::Comma) { self.advance(); continue; }
+                    break;
+                }
+            }
+            // N3 alternate spelling: `S has :p O` means `S :p O`.
+            else {
+                if self.peek_is_bare("has") { self.advance(); }
+                let predicate = self.parse_verb()?;
+                loop {
+                    let (object, mut generated) = self.parse_term()?;
+                    triples.push(Triple::new(subject.clone(), predicate.clone(), object));
+                    triples.append(&mut generated);
+                    if self.check(&TokenKind::Comma) { self.advance(); continue; }
+                    break;
+                }
+            }
+
             if self.check(&TokenKind::Semicolon) {
                 while self.check(&TokenKind::Semicolon) { self.advance(); }
                 if matches!(self.peek_kind(), TokenKind::Dot | TokenKind::RBrace | TokenKind::RBracket) { break; }
@@ -420,10 +525,10 @@ impl Parser {
             self.advance();
             return Ok(Term::iri(LOG_IMPLIED_BY));
         }
-        let (term, generated) = self.parse_term()?;
-        if !generated.is_empty() {
-            return Err(EyeronError::new("generated blank/list triples cannot be used as predicates"));
-        }
+        let (term, _generated) = self.parse_term()?;
+        // Predicate terms may themselves be lists or formulas in N3.  Generated
+        // list-support triples are not needed to match such predicate terms, so
+        // keep the predicate and drop the auxiliary triples here.
         Ok(term)
     }
 
@@ -431,7 +536,7 @@ impl Parser {
         let tok = self.advance().clone();
         match tok.kind {
             TokenKind::Iri(i) => Ok((Term::iri(self.resolve_iri(&i)), Vec::new())),
-            TokenKind::PName(p) => Ok((Term::iri(self.expand_pname(&p, tok.offset)?), Vec::new())),
+            TokenKind::PName(p) => self.parse_pname_or_path(&p, tok.offset),
             TokenKind::Var(v) => Ok((Term::var(v), Vec::new())),
             TokenKind::Blank(b) => Ok((Term::blank(b), Vec::new())),
             TokenKind::String(value) => self.finish_literal(value),
@@ -472,6 +577,19 @@ impl Parser {
             self.advance();
             return Ok((blank, Vec::new()));
         }
+        // N3's `id` form lets a property list name its subject:
+        // `[ id :c :d :e ]` is parsed as triples about `:c`, not about a
+        // fresh blank node.  This is used in the notation3 static grammar
+        // tests and is a compact way to nest property lists.
+        if self.peek_is_bare("id") {
+            self.advance();
+            let (subject, mut generated) = self.parse_term()?;
+            let mut triples = Vec::new();
+            triples.append(&mut generated);
+            triples.extend(self.parse_predicate_object_list(subject.clone())?);
+            self.expect(TokenKind::RBracket)?;
+            return Ok((subject, triples));
+        }
         let triples = self.parse_predicate_object_list(blank.clone())?;
         self.expect(TokenKind::RBracket)?;
         Ok((blank, triples))
@@ -486,28 +604,103 @@ impl Parser {
             triples.append(&mut generated);
         }
         self.expect(TokenKind::RParen)?;
-        Ok((Term::list(items), triples))
+        let list_term = Term::list(items.clone());
+        if !items.is_empty() {
+            triples.push(Triple::new(list_term.clone(), Term::iri(RDF_FIRST), items[0].clone()));
+            let rest = if items.len() == 1 { Term::iri(RDF_NIL) } else { Term::list(items[1..].to_vec()) };
+            triples.push(Triple::new(list_term.clone(), Term::iri(RDF_REST), rest));
+        }
+        Ok((list_term, triples))
+    }
+
+    fn parse_pname_or_path(&mut self, pname: &str, offset: usize) -> Result<(Term, Vec<Triple>)> {
+        if pname.contains('!') || pname.contains('^') {
+            return self.parse_path_pname(pname, offset);
+        }
+        Ok((Term::iri(self.expand_pname(pname, offset)?), Vec::new()))
+    }
+
+    fn parse_path_pname(&mut self, pname: &str, offset: usize) -> Result<(Term, Vec<Triple>)> {
+        let mut parts = Vec::<(char, String)>::new();
+        let mut buf = String::new();
+        let mut op = '!';
+        for ch in pname.chars() {
+            if ch == '!' || ch == '^' {
+                if buf.is_empty() { return Err(EyeronError::at("empty path component", offset)); }
+                parts.push((op, buf.clone()));
+                buf.clear();
+                op = ch;
+            } else {
+                buf.push(ch);
+            }
+        }
+        if buf.is_empty() { return Err(EyeronError::at("empty path component", offset)); }
+        parts.push((op, buf));
+        let mut current = Term::iri(self.expand_pname(&parts[0].1, offset)?);
+        let mut generated = Vec::new();
+        for (op, raw_pred) in parts.into_iter().skip(1) {
+            let pred = Term::iri(self.expand_pname(&raw_pred, offset)?);
+            let next = self.fresh_blank("path");
+            if op == '!' {
+                generated.push(Triple::new(current, pred, next.clone()));
+            } else {
+                generated.push(Triple::new(next.clone(), pred, current));
+            }
+            current = next;
+        }
+        Ok((current, generated))
     }
 
     fn expand_pname(&self, pname: &str, offset: usize) -> Result<String> {
-        let Some((prefix, local)) = pname.split_once(':') else {
-            return Err(EyeronError::at(format!("unknown bare name '{}'; use a prefix or <IRI>", pname), offset));
-        };
-        let Some(base) = self.doc.prefixes.get(prefix) else {
-            return Err(EyeronError::at(format!("unknown prefix '{}:'", prefix), offset));
-        };
-        Ok(format!("{}{}", base, local))
+        if let Some((prefix, local)) = pname.split_once(':') {
+            let Some(base) = self.doc.prefixes.get(prefix) else {
+                return Err(EyeronError::at(format!("unknown prefix '{}:'", prefix), offset));
+            };
+            return Ok(format!("{}{}", base, local));
+        }
+        if let Some(base) = self.doc.base_iri.as_deref() {
+            return Ok(self.resolve_iri_against_base(base, pname));
+        }
+        if let Some(base) = self.doc.prefixes.get("") {
+            return Ok(format!("{}{}", base, pname));
+        }
+        Ok(format!("http://example.org/{}", pname))
     }
 
     fn resolve_iri(&self, iri: &str) -> String {
-        if iri.contains("://") || iri.starts_with("urn:") || iri.starts_with("mailto:") { return iri.to_string(); }
+        if has_uri_scheme(iri) { return iri.to_string(); }
         let Some(base) = &self.doc.base_iri else { return iri.to_string(); };
-        if iri.starts_with('#') { return format!("{}{}", base, iri); }
-        if base.ends_with('/') || base.ends_with('#') { return format!("{}{}", base, iri); }
-        match base.rfind('/') {
-            Some(idx) => format!("{}{}", &base[..idx + 1], iri),
-            None => format!("{}{}", base, iri),
-        }
+        self.resolve_iri_against_base(base, iri)
+    }
+
+    fn resolve_iri_against_base(&self, base: &str, reference: &str) -> String {
+        if has_uri_scheme(reference) { return reference.to_string(); }
+        let (base_scheme, base_authority, base_path, base_query, _) = split_uri(base);
+        let (ref_path, ref_query, ref_fragment) = split_reference(reference);
+
+        let (authority, path, query) = if let Some(rest) = ref_path.strip_prefix("//") {
+            let (auth, p) = split_authority_path(rest);
+            (Some(auth), remove_dot_segments(&p), ref_query)
+        } else if ref_path.is_empty() {
+            (base_authority.clone(), base_path.clone(), ref_query.or(base_query))
+        } else if ref_path.starts_with('/') {
+            (base_authority.clone(), remove_dot_segments(&ref_path), ref_query)
+        } else {
+            let merged = merge_paths(&base_path, &ref_path, base_authority.is_some());
+            (base_authority.clone(), remove_dot_segments(&merged), ref_query)
+        };
+
+        let mut out = String::new();
+        if let Some(scheme) = base_scheme { out.push_str(&scheme); out.push(':'); }
+        if let Some(auth) = authority { out.push_str("//"); out.push_str(&auth); }
+        out.push_str(&path);
+        if let Some(q) = query { out.push('?'); out.push_str(&q); }
+        if let Some(f) = ref_fragment { out.push('#'); out.push_str(&f); }
+        out
+    }
+
+    fn peek_is_bare(&self, word: &str) -> bool {
+        matches!(self.peek_kind(), TokenKind::PName(p) if p.eq_ignore_ascii_case(word))
     }
 
     fn fresh_blank(&mut self, prefix: &str) -> Term {
@@ -542,13 +735,34 @@ fn same_variant(a: &TokenKind, b: &TokenKind) -> bool {
     std::mem::discriminant(a) == std::mem::discriminant(b)
 }
 
-fn number_literal(value: String) -> Term {
-    let datatype = if value.contains('.') || value.contains('e') || value.contains('E') {
+fn number_literal(mut value: String) -> Term {
+    if value.starts_with('+') { value.remove(0); }
+    let datatype = if value.contains('e') || value.contains('E') {
+        let parsed = value.parse::<f64>().unwrap_or(0.0);
+        value = trim_numeric_lexical(parsed, true);
+        "http://www.w3.org/2001/XMLSchema#double"
+    } else if value.contains('.') {
+        if value.starts_with('.') { value.insert(0, '0'); }
+        if value.starts_with("-.") { value.insert(1, '0'); }
+        if value.ends_with('.') { value.push('0'); }
         "http://www.w3.org/2001/XMLSchema#decimal"
     } else {
         "http://www.w3.org/2001/XMLSchema#integer"
     };
     Term::Literal(Literal { value, datatype: Some(datatype.to_string()), language: None })
+}
+
+fn trim_numeric_lexical(value: f64, decimal: bool) -> String {
+    if value.is_nan() { return "NaN".to_string(); }
+    if value.is_infinite() { return if value.is_sign_negative() { "-INF" } else { "INF" }.to_string(); }
+    let mut s = value.to_string();
+    if s.contains('.') {
+        while s.ends_with('0') { s.pop(); }
+        if s.ends_with('.') { s.push('0'); }
+    } else if decimal {
+        s.push_str(".0");
+    }
+    s
 }
 
 fn boolean_literal(value: bool) -> Term {
@@ -568,4 +782,78 @@ fn is_boolean_true_term(term: &Term) -> bool {
         }
         _ => false,
     }
+}
+
+fn is_boolean_false_term(term: &Term) -> bool {
+    match term {
+        Term::Literal(lit) => {
+            lit.value == "false"
+                && lit.language.is_none()
+                && lit.datatype.as_deref() == Some("http://www.w3.org/2001/XMLSchema#boolean")
+        }
+        _ => false,
+    }
+}
+
+
+fn has_uri_scheme(s: &str) -> bool {
+    let Some(idx) = s.find(':') else { return false; };
+    let prefix = &s[..idx];
+    !prefix.is_empty()
+        && prefix.chars().next().is_some_and(|c| c.is_ascii_alphabetic())
+        && prefix.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '+' | '-' | '.'))
+}
+
+fn split_uri(uri: &str) -> (Option<String>, Option<String>, String, Option<String>, Option<String>) {
+    let (scheme, rest) = if let Some(idx) = uri.find(':') {
+        (Some(uri[..idx].to_string()), &uri[idx + 1..])
+    } else {
+        (None, uri)
+    };
+    let (authority, rest) = if let Some(after) = rest.strip_prefix("//") {
+        let (auth, path) = split_authority_path(after);
+        (Some(auth), path)
+    } else {
+        (None, rest.to_string())
+    };
+    let (path_q, fragment) = match rest.split_once('#') { Some((a, b)) => (a, Some(b.to_string())), None => (rest.as_str(), None) };
+    let (path, query) = match path_q.split_once('?') { Some((a, b)) => (a.to_string(), Some(b.to_string())), None => (path_q.to_string(), None) };
+    (scheme, authority, path, query, fragment)
+}
+
+fn split_reference(reference: &str) -> (String, Option<String>, Option<String>) {
+    let (path_q, fragment) = match reference.split_once('#') { Some((a, b)) => (a, Some(b.to_string())), None => (reference, None) };
+    let (path, query) = match path_q.split_once('?') { Some((a, b)) => (a.to_string(), Some(b.to_string())), None => (path_q.to_string(), None) };
+    (path, query, fragment)
+}
+
+fn split_authority_path(s: &str) -> (String, String) {
+    if let Some(idx) = s.find('/') { (s[..idx].to_string(), s[idx..].to_string()) } else { (s.to_string(), String::new()) }
+}
+
+fn merge_paths(base_path: &str, rel_path: &str, has_authority: bool) -> String {
+    if has_authority && base_path.is_empty() { return format!("/{}", rel_path); }
+    match base_path.rfind('/') {
+        Some(idx) => format!("{}{}", &base_path[..idx + 1], rel_path),
+        None => rel_path.to_string(),
+    }
+}
+
+fn remove_dot_segments(path: &str) -> String {
+    let leading = path.starts_with('/');
+    let trailing = path.ends_with('/') || path.ends_with("/.") || path.ends_with("/..");
+    let mut stack: Vec<&str> = Vec::new();
+    for seg in path.split('/') {
+        match seg {
+            "" | "." => {}
+            ".." => { stack.pop(); }
+            other => stack.push(other),
+        }
+    }
+    let mut out = String::new();
+    if leading { out.push('/'); }
+    out.push_str(&stack.join("/"));
+    if trailing && !out.ends_with('/') { out.push('/'); }
+    if out.is_empty() && leading { out.push('/'); }
+    out
 }

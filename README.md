@@ -193,16 +193,17 @@ The test suite includes:
 
 - parser and built-in unit tests;
 - focused regression tests for backward rules, generated rules, quoted formulas, list handling, and blank nodes;
-- a packaged example/golden-output sweep over the examples in `examples/` and `examples/output/`.
+- a packaged example/golden-output sweep over the examples in `examples/` and `examples/output/`;
+- the bundled Notation3 conformance suite from `tests/notation3tests`, checked by `tests/notation3_conformance.rs`.
 
-During the golden sweep, progress and elapsed time are printed for each example:
+During the golden and conformance sweeps, progress and elapsed time are printed so long-running cases are visible:
 
 ```text
 checking examples/hanoi.n3
 ok examples/hanoi.n3 (0.012s)
 ```
 
-The comparison checks stable output lines rather than exact byte-for-byte output. This avoids false failures caused by derived triple ordering or generated blank-node labels.
+The example comparison checks stable output lines rather than exact byte-for-byte output. This avoids false failures caused by derived triple ordering or generated blank-node labels. The Notation3 conformance test mirrors the upstream score model: success tests must derive the expected result, fail tests must not derive it, and crash tests are accepted only when they do not expose normal test results.
 
 The bundled examples include rule, list, string, log, time, algebraic, policy/alignment, RDF Message Log, and deep-taxonomy workloads. The five `deep-taxonomy-*` examples are included in the normal `cargo test` sweep and exercise the agenda-based single-premise rule path.
 

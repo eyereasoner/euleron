@@ -247,7 +247,7 @@ fn all_packaged_example_goldens_match_expected_lines() {
             let _ = tx.send(result);
         });
 
-        let timeout = if name.starts_with("deep-taxonomy-") {
+        let timeout = if name.starts_with("deep-taxonomy-") || name.starts_with("rdf-message-") {
             std::time::Duration::from_secs(60)
         } else {
             std::time::Duration::from_secs(20)

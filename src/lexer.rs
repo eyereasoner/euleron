@@ -26,6 +26,7 @@ pub enum TokenKind {
     RParen,
     Arrow,
     BackArrow,
+    Reverse,
     HatHat,
     Equals,
     Eof,
@@ -64,6 +65,10 @@ impl<'a> Lexer<'a> {
                     self.bump(); self.bump();
                     self.tokens.push(Token { kind: TokenKind::BackArrow, offset });
                 }
+                '<' if self.starts_with("<-") => {
+                    self.bump(); self.bump();
+                    self.tokens.push(Token { kind: TokenKind::Reverse, offset });
+                }
                 '<' => self.read_iri()?,
                 '=' if self.starts_with("=>") => {
                     self.bump(); self.bump();
@@ -78,6 +83,7 @@ impl<'a> Lexer<'a> {
                     self.tokens.push(Token { kind: TokenKind::HatHat, offset });
                 }
                 '"' | '\'' => self.read_string()?,
+                '.' if self.peek_next().is_some_and(|c| c.is_ascii_digit()) => self.read_number()?,
                 '.' => { self.bump(); self.tokens.push(Token { kind: TokenKind::Dot, offset }); }
                 ';' => { self.bump(); self.tokens.push(Token { kind: TokenKind::Semicolon, offset }); }
                 ',' => { self.bump(); self.tokens.push(Token { kind: TokenKind::Comma, offset }); }
@@ -87,7 +93,7 @@ impl<'a> Lexer<'a> {
                 ']' => { self.bump(); self.tokens.push(Token { kind: TokenKind::RBracket, offset }); }
                 '(' => { self.bump(); self.tokens.push(Token { kind: TokenKind::LParen, offset }); }
                 ')' => { self.bump(); self.tokens.push(Token { kind: TokenKind::RParen, offset }); }
-                _ if ch.is_ascii_digit() || (ch == '-' && self.peek_next().is_some_and(|c| c.is_ascii_digit())) => self.read_number()?,
+                _ if ch.is_ascii_digit() || ((ch == '-' || ch == '+') && self.peek_next().is_some_and(|c| c.is_ascii_digit())) => self.read_number()?,
                 _ => self.read_word()?,
             }
         }
@@ -120,8 +126,25 @@ impl<'a> Lexer<'a> {
             if ch == '\\' {
                 let Some(esc) = self.peek() else { return Err(EyeronError::at("unterminated IRI escape", offset)); };
                 self.bump();
-                value.push(esc);
+                if esc == 'u' || esc == 'U' {
+                    let count = if esc == 'u' { 4 } else { 8 };
+                    let mut hex = String::new();
+                    for _ in 0..count {
+                        let Some(h) = self.peek() else { return Err(EyeronError::at("unterminated Unicode escape", offset)); };
+                        self.bump();
+                        hex.push(h);
+                    }
+                    let code = u32::from_str_radix(&hex, 16).map_err(|_| EyeronError::at("invalid Unicode escape", offset))?;
+                    let Some(c) = char::from_u32(code) else { return Err(EyeronError::at("invalid Unicode scalar value", offset)); };
+                    if is_forbidden_iri_char(c) { return Err(EyeronError::at("forbidden character in IRI reference", offset)); }
+                    value.push(c);
+                } else {
+                    value.push(esc);
+                }
             } else {
+                if is_forbidden_iri_char(ch) {
+                    return Err(EyeronError::at("forbidden character in IRI reference", offset));
+                }
                 value.push(ch);
             }
         }
@@ -139,16 +162,28 @@ impl<'a> Lexer<'a> {
             self.bump();
             if ch == quote {
                 if triple {
-                    if self.starts_with(&format!("{}{}", quote, quote)) {
-                        self.bump(); self.bump();
+                    // In a long string, a run of N quote characters ends the
+                    // string with the final three quotes and contributes the
+                    // preceding N-3 quotes to the value.  This handles the N3
+                    // quote-edge cases in notation3tests without leaving a
+                    // stray short-string token behind.
+                    let mut run = 1usize;
+                    while self.peek() == Some(quote) {
+                        self.bump();
+                        run += 1;
+                    }
+                    if run >= 3 {
+                        for _ in 0..(run - 3) { value.push(quote); }
                         self.tokens.push(Token { kind: TokenKind::String(value), offset });
                         return Ok(());
                     }
-                    value.push(ch);
+                    for _ in 0..run { value.push(quote); }
                 } else {
                     self.tokens.push(Token { kind: TokenKind::String(value), offset });
                     return Ok(());
                 }
+            } else if !triple && matches!(ch, '\n' | '\r') {
+                return Err(EyeronError::at("newline in short string literal", offset));
             } else if ch == '\\' {
                 let Some(esc) = self.peek() else { return Err(EyeronError::at("unterminated string escape", offset)); };
                 self.bump();
@@ -156,9 +191,24 @@ impl<'a> Lexer<'a> {
                     'n' => value.push('\n'),
                     'r' => value.push('\r'),
                     't' => value.push('\t'),
+                    'b' => value.push('\u{0008}'),
+                    'f' => value.push('\u{000C}'),
                     '"' => value.push('"'),
                     '\'' => value.push('\''),
                     '\\' => value.push('\\'),
+                    'u' | 'U' => {
+                        let count = if esc == 'u' { 4 } else { 8 };
+                        let mut hex = String::new();
+                        for _ in 0..count {
+                            let Some(h) = self.peek() else { return Err(EyeronError::at("unterminated Unicode escape", offset)); };
+                            self.bump();
+                            hex.push(h);
+                        }
+                        let code = u32::from_str_radix(&hex, 16).map_err(|_| EyeronError::at("invalid Unicode escape", offset))?;
+                        let Some(c) = char::from_u32(code) else { return Err(EyeronError::at("invalid Unicode scalar value", offset)); };
+                        if is_forbidden_string_char(c) { return Err(EyeronError::at("forbidden character in string literal", offset)); }
+                        value.push(c);
+                    }
                     other => value.push(other),
                 }
             } else {
@@ -170,16 +220,26 @@ impl<'a> Lexer<'a> {
     fn read_number(&mut self) -> Result<()> {
         let offset = self.pos;
         let mut value = String::new();
-        if self.peek() == Some('-') { value.push(self.bump().unwrap()); }
+        if matches!(self.peek(), Some('-' | '+')) { value.push(self.bump().unwrap()); }
         while self.peek().is_some_and(|c| c.is_ascii_digit()) { value.push(self.bump().unwrap()); }
-        if self.peek() == Some('.') && self.peek_next().is_some_and(|c| c.is_ascii_digit()) {
-            value.push(self.bump().unwrap());
-            while self.peek().is_some_and(|c| c.is_ascii_digit()) { value.push(self.bump().unwrap()); }
+        if self.peek() == Some('.') {
+            // Accept .5 and 4.e2, but do not consume the statement dot in
+            // ordinary terms such as `55.`.
+            let after_dot_can_belong_to_number = self.peek_next()
+                .is_some_and(|c| c.is_ascii_digit() || matches!(c, 'e' | 'E'));
+            let leading_dot_number = value.is_empty() || value == "-" || value == "+";
+            if after_dot_can_belong_to_number || leading_dot_number {
+                value.push(self.bump().unwrap());
+                while self.peek().is_some_and(|c| c.is_ascii_digit()) { value.push(self.bump().unwrap()); }
+            }
         }
         if matches!(self.peek(), Some('e' | 'E')) {
             value.push(self.bump().unwrap());
             if matches!(self.peek(), Some('+' | '-')) { value.push(self.bump().unwrap()); }
             while self.peek().is_some_and(|c| c.is_ascii_digit()) { value.push(self.bump().unwrap()); }
+        }
+        if self.peek() == Some('.') && self.peek_next().is_some_and(|c| c.is_ascii_digit()) {
+            return Err(EyeronError::at("malformed numeric literal", offset));
         }
         self.tokens.push(Token { kind: TokenKind::Number(value), offset });
         Ok(())
@@ -192,18 +252,19 @@ impl<'a> Lexer<'a> {
             if ch.is_whitespace() || matches!(ch, '{' | '}' | '[' | ']' | '(' | ')' | ',' | ';') { break; }
             if ch == '#' { break; }
             if ch == '.' { break; }
-            if ch == '<' || ch == '>' || ch == '=' || ch == '^' { break; }
+            if ch == '<' || ch == '>' || ch == '=' { break; }
             word.push(ch);
             self.bump();
         }
         if word.is_empty() {
             return Err(EyeronError::at(format!("unexpected character {:?}", self.peek()), offset));
         }
-        let kind = match word.as_str() {
+        let lower = word.to_ascii_lowercase();
+        let kind = match lower.as_str() {
             "@prefix" => TokenKind::AtPrefix,
             "@base" => TokenKind::AtBase,
-            "PREFIX" | "prefix" => TokenKind::Prefix,
-            "BASE" | "base" => TokenKind::Base,
+            "prefix" => TokenKind::Prefix,
+            "base" => TokenKind::Base,
             "a" => TokenKind::A,
             "true" => TokenKind::Boolean(true),
             "false" => TokenKind::Boolean(false),
@@ -232,4 +293,12 @@ impl<'a> Lexer<'a> {
         self.pos += ch.len_utf8();
         Some(ch)
     }
+}
+
+fn is_forbidden_iri_char(ch: char) -> bool {
+    ch.is_control() || ch.is_whitespace() || matches!(ch, '<' | '>' | '{' | '}' | '|' | '^' | '`' | '\\')
+}
+
+fn is_forbidden_string_char(ch: char) -> bool {
+    matches!(ch as u32, 0x00 | 0xFFFE | 0xFFFF)
 }
