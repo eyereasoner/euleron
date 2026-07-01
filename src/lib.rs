@@ -5,6 +5,7 @@
 
 pub mod ast;
 pub mod error;
+pub mod incremental;
 pub mod lexer;
 pub mod parser;
 pub mod printing;
@@ -12,6 +13,7 @@ pub mod reasoner;
 
 pub use ast::{Document, Literal, Rule, Term, Triple};
 pub use error::{EyeronError, Result};
+pub use incremental::{blank as rdf_blank, iri as rdf_iri, literal as rdf_literal, var as rdf_var, Delta, IncrementalReasoner, Quad, RdfTerm};
 pub use parser::parse_n3;
 pub use printing::{document_debug, result_to_string, triples_to_n3};
 pub use reasoner::{reason as reason_document, ReasonerOptions, ReasonerResult};

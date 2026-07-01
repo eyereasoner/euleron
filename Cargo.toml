@@ -19,3 +19,6 @@ path = "src/main.rs"
 lto = true
 codegen-units = 1
 strip = true
+
+[dependencies]
+sophia_api = "0.10.0"

@@ -454,7 +454,7 @@ fn term_contains_blank(term: &Term) -> bool {
     }
 }
 
-fn is_builtin_iri(iri: &str) -> bool {
+pub(crate) fn is_builtin_iri(iri: &str) -> bool {
     matches!(iri,
         LOG_EQUAL_TO | LOG_NOT_EQUAL_TO | LOG_COLLECT_ALL_IN | LOG_FOR_ALL_IN
         | LOG_CONCLUSION | LOG_CONJUNCTION | LOG_NOT_INCLUDES | LOG_URI
@@ -906,7 +906,7 @@ fn rename_term(term: &Term, prefix: &str) -> Term {
     }
 }
 
-fn match_triple(pattern: &Triple, fact: &Triple, bindings: &mut Bindings) -> bool {
+pub(crate) fn match_triple(pattern: &Triple, fact: &Triple, bindings: &mut Bindings) -> bool {
     match_term(&pattern.s, &fact.s, bindings)
         && match_term(&pattern.p, &fact.p, bindings)
         && match_term(&pattern.o, &fact.o, bindings)
