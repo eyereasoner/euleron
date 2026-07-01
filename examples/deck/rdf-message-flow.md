@@ -1,8 +1,8 @@
-# RDF Message Logs in Eyeling — from stream to reasoning
+# RDF Message Logs in Eyeron — from stream to reasoning
 
-This deck reads alongside the [rules](../rdf-message-flow.n3) and the replayed [message log input](../input/rdf-message-flow.trig): the [golden output](../output/rdf-message-flow.md) shows what Eyeling derives once `-r` has exposed the RDF Message envelopes and payload graphs. The [README section](https://eyereasoner.github.io/eyeling/#rdf-message-logs) explains that replay step in more detail.
+This deck reads alongside the [rules](../rdf-message-flow.n3) and the replayed [message log input](../input/rdf-message-flow.trig): the [golden output](../output/rdf-message-flow.md) shows what Eyeron derives once `-r` has exposed the RDF Message envelopes and payload graphs. The [README section](../../README.md#rdf-messages) explains that replay step in more detail.
 
-The goal is to show, in plain language, how Eyeling can now read an RDF Message Log directly instead of asking the example data to describe its own message envelopes by hand.
+The goal is to show, in plain language, how Eyeron can now read an RDF Message Log directly instead of asking the example data to describe its own message envelopes by hand.
 
 ---
 
@@ -58,7 +58,7 @@ The input begins with:
 VERSION "1.2-messages"
 ```
 
-That tells Eyeling:
+That tells Eyeron:
 
 > This file contains message boundaries.
 
@@ -91,13 +91,13 @@ _:obs sosa:hasSimpleResult 28 .
 
 ---
 
-## What Eyeling does internally
+## What Eyeron does internally
 
-Eyeling does not treat `MESSAGE` as an ordinary RDF term.
+Eyeron does not treat `MESSAGE` as an ordinary RDF term.
 
 It handles it before normal N3 reasoning starts.
 
-Internally, Eyeling turns the log into a replay view:
+Internally, Eyeron turns the log into a replay view:
 
 - one stream resource,
 - one envelope per message,
@@ -128,7 +128,7 @@ It also mixed two concerns:
 1. the message-log machinery, and
 2. the domain logic of routing temperature observations.
 
-Now Eyeling handles the message-log machinery.
+Now Eyeron handles the message-log machinery.
 
 The N3 file can focus on the logic.
 
@@ -162,7 +162,7 @@ It represents a heartbeat:
 
 > “The stream is still alive, even though there is no new observation payload.”
 
-Eyeling still creates an envelope for it.
+Eyeron still creates an envelope for it.
 
 That means the empty message keeps its place in the ordered replay.
 
@@ -184,7 +184,7 @@ That does not mean both messages talk about the same blank node.
 
 In a message log, blank-node labels are scoped to the message.
 
-Eyeling rewrites them internally so each message gets its own blank nodes.
+Eyeron rewrites them internally so each message gets its own blank nodes.
 
 ---
 
@@ -192,7 +192,7 @@ Eyeling rewrites them internally so each message gets its own blank nodes.
 
 The N3 rules do not see `MESSAGE` directly.
 
-They see Eyeling’s replay vocabulary, `eymsg:`.
+They see Eyeron’s replay vocabulary, `eymsg:`.
 
 For example, a rule can ask:
 
@@ -229,7 +229,7 @@ That gives a simple form of ordered replay or back pressure:
 
 ## What the final answer says
 
-When the example succeeds, Eyeling reports that five parser-replayed envelopes moved through the flow.
+When the example succeeds, Eyeron reports that five parser-replayed envelopes moved through the flow.
 
 With a threshold of 26:
 
@@ -266,7 +266,7 @@ You can replay the stream, reason over each message atomically, and explain what
 
 `MESSAGE` is the boundary.
 
-Eyeling turns those boundaries into ordered replay envelopes.
+Eyeron turns those boundaries into ordered replay envelopes.
 
 The N3 rules consume the replay and focus on the domain logic.
 

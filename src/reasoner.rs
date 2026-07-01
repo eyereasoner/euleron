@@ -232,7 +232,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
 
         let before = seen.len();
 
-        // Fast path, modelled after the JavaScript engine: safe single-premise
+        // Fast path, modelled after the earlier Eyeling engine: safe single-premise
         // rules are driven by newly seen facts.  This turns deep taxonomy chains
         // from "scan every rule for every wave" into "look up the rules that
         // can match this fact".

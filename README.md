@@ -2,7 +2,7 @@
 
 Eyeron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`. The native integration target for structured RDF exchange is RDF Messages.
 
-Eyeron is the Rust reasoner. **Eyeling** is the JavaScript reasoner in the same Eyereasoner family; this package intentionally uses the `eyeron` crate name and `eyeron` executable name to keep the two projects distinct.
+Eyeron is the Rust reasoner in the Eyereasoner family. **Eyeling** remains the sibling project; this package intentionally uses the `eyeron` crate name and `eyeron` executable name to keep the projects distinct.
 
 The crate provides both:
 
@@ -77,6 +77,17 @@ Show help/version:
 cargo run -- --help
 cargo run -- --version
 ```
+
+For RDF 1.2 syntax-manifest work, the CLI also exposes an inspection-oriented parse mode over the same lexer/parser used by N3:
+
+```bash
+cargo run -- --rdf12-json --rdf12-format turtle --base-iri https://example.org/base - < input.ttl
+cargo run -- --rdf12-json --rdf12-format n-triples - < input.nt
+cargo run -- --rdf12-json --rdf12-format n-quads - < input.nq
+cargo run -- --rdf12-json --rdf12-format trig - < input.trig
+```
+
+`--rdf12-json` emits machine-readable JSON quads for parser inspection. This mode is intended for conformance development and shares Eyeron's lexer, term parser, directive handling, list parser, blank-node property-list parser, and quoted-triple/formula representation with ordinary N3 parsing.
 
 The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. Flags that are not implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
@@ -207,6 +218,53 @@ The example comparison checks stable output lines rather than exact byte-for-byt
 
 The bundled examples include rule, list, string, log, time, algebraic, policy/alignment, RDF Message Log, and deep-taxonomy workloads. The five `deep-taxonomy-*` examples are included in the normal `cargo test` sweep and exercise the agenda-based single-premise rule path.
 
+### W3C RDF 1.x manifests and EARL report
+
+Eyeron keeps RDF manifest work inside Rust. The full W3C RDF sweep lives in `tests/w3c_rdf/` with a thin Cargo integration-test entry point at `tests/w3c_rdf.rs`. It runs the 12 RDF 1.1 / RDF 1.2 manifest roots, follows `mf:include`, executes syntax, eval, and RDF/RDFS entailment cases through Eyeron's shared lexer/parser profiles, and writes an EARL report.
+
+The runner uses a local W3C RDF mirror under `tests/w3c_rdf/rdf-tests/`. Network access is disabled by default so `cargo test` cannot silently spend minutes downloading files; if the mirror is missing, the test fails fast with a bootstrap instruction. The W3C RDF sweep is now part of the normal test suite:
+
+```bash
+cargo test
+```
+
+The W3C RDF integration test uses a small custom harness so ordinary `cargo test` output remains explicit and the status words are colored when Cargo colors are enabled. It prints one line per manifest plus one aggregate EARL-report line, e.g. `test w3c_rdf_01_rdf11_n_triples_70 ... ok (70 tests)`, `test w3c_rdf_07_rdf11_turtle_313 ... ok (313 tests)`, and `test w3c_rdf_13_all_manifests_1170_earl_report ... ok (1170 tests + EARL report)`.
+
+To run only the W3C RDF sweep:
+
+```bash
+cargo test --test w3c_rdf
+```
+
+To force colored status words even when Cargo is not attached to a terminal:
+
+```bash
+cargo test --test w3c_rdf -- --color always
+```
+
+The aggregate test writes the default output report:
+
+```text
+reports/w3c-rdf-earl.ttl
+```
+
+Useful environment variables:
+
+```bash
+EYERON_W3C_RDF_EARL=reports/w3c-rdf-earl.ttl cargo test --test w3c_rdf
+EYERON_W3C_RDF_FILTER=turtle12 cargo test --test w3c_rdf
+EYERON_W3C_RDF_QUIET=1 cargo test --test w3c_rdf
+EYERON_W3C_RDF_VERBOSE=1 cargo test --test w3c_rdf
+EYERON_W3C_RDF_REFRESH=1 cargo test --test w3c_rdf
+EYERON_W3C_RDF_ONLINE=1 cargo test --test w3c_rdf
+EYERON_W3C_RDF_CACHE_DIR=tests/w3c_rdf/rdf-tests cargo test --test w3c_rdf
+```
+
+
+During `EYERON_W3C_RDF_REFRESH=1`, the 12 per-manifest harness lines are reported as delegated and the aggregate pass performs the single online mirror refresh. You can still select a subset by passing a substring filter such as `cargo test --test w3c_rdf rdf11_turtle`.
+
+The milestone target is **1170/1170 tests passed across 12 manifests**. The per-manifest harness checks assert their expected counts (`70`, `29`, `87`, `27`, `48`, `77`, `313`, `29`, `74`, `356`, `25`, `35`) and the aggregate check asserts `1170`. Keep `tests/w3c_rdf/rdf-tests/` under version control for fast, reproducible local runs. The runner does not introduce a second RDF parser: Turtle, N-Triples, N-Quads, TriG, RDF 1.2 triple terms, and RDF 1.2 annotations are handled as syntax profiles over the same lexer/parser infrastructure used by N3.
+
 ## Examples
 
 Some useful examples to run manually:
@@ -233,18 +291,17 @@ The reasoner maintains indexes for grounded fact lookup and includes a fast agen
 
 ## Non-goals
 
-Eyeron does not target browser compatibility or RDF-JS compatibility. Those belong naturally to JavaScript environments. Eyeron targets native Rust execution, command-line use, embedding from Rust, and RDF Messages integration.
+Eyeron targets native Rust execution, command-line use, embedding from Rust, and RDF Messages integration.
 
 ## Current limitations
 
 This first release focuses on the core reasoning path and the bundled example suite. The following areas are intentionally limited or incomplete:
 
-- full RDF 1.2 / TriG parsing modes;
 - continuous RDF Messages streaming input/output beyond finite log replay;
 - external URL dereferencing;
 - persistent fact stores;
 - proof trace comments and full explanation output;
-- custom JavaScript built-in modules;
+- custom external built-in modules;
 - complete coverage of every N3 built-in namespace.
 
 `examples/dining-philosophers.n3` is packaged as an example, but it is skipped in the default golden sweep because it needs a more selective scheduler for blank-node-heavy state-machine joins.
@@ -255,13 +312,15 @@ This first release focuses on the core reasoning path and the bundled example su
 src/
   ast.rs        Core syntax/data structures
   lexer.rs      Tokenizer
-  parser.rs     N3 parser
+  parser.rs     Shared N3/RDF 1.2 parser profiles
   reasoner.rs   Rule engine and built-ins
-  printing.rs   N3/debug output
+  printing.rs   N3/debug output and RDF 1.2 JSON adapter output
   main.rs       CLI entry point
 examples/       Example N3 inputs
 examples/output Golden outputs used by cargo test
 tests/          Integration and golden-sweep tests
+  notation3tests/ Bundled Notation3 conformance data
+  w3c_rdf/        Rust W3C RDF 1.x manifest sweep
 ```
 
 ## License

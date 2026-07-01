@@ -249,3 +249,138 @@ pub fn document_debug(doc: &Document) -> String {
     out.push_str("}\n");
     out
 }
+
+pub fn rdf12_json(doc: &Document) -> String {
+    let mut writer = RdfJsonWriter { quads: Vec::new(), blank_counter: 0 };
+    writer.document(doc);
+    format!("[{}]\n", writer.quads.join(","))
+}
+
+struct RdfJsonWriter {
+    quads: Vec<String>,
+    blank_counter: usize,
+}
+
+impl RdfJsonWriter {
+    fn document(&mut self, doc: &Document) {
+        for triple in &doc.facts {
+            if let Some((graph, triples)) = named_graph_fact(triple) {
+                let graph_json = self.graph_term_json(graph);
+                for inner in triples {
+                    self.triple(inner, &graph_json);
+                }
+            } else {
+                let graph_json = default_graph_json();
+                self.triple(triple, &graph_json);
+            }
+        }
+    }
+
+    fn triple(&mut self, triple: &Triple, graph_json: &str) {
+        let s = self.term_json(&triple.s, JsonPosition::Subject, graph_json);
+        let p = self.term_json(&triple.p, JsonPosition::Predicate, graph_json);
+        let o = self.term_json(&triple.o, JsonPosition::Object, graph_json);
+        self.quads.push(quad_json(&s, &p, &o, graph_json));
+    }
+
+    fn term_json(&mut self, term: &Term, position: JsonPosition, graph_json: &str) -> String {
+        match term {
+            Term::Iri(iri) => named_node_json(iri),
+            Term::Blank(id) => blank_node_json(id),
+            Term::Literal(lit) => literal_json(lit),
+            Term::List(items) => self.list_json(items, graph_json),
+            Term::Formula(triples) if triples.len() == 1 && !matches!(position, JsonPosition::Predicate | JsonPosition::Graph) => {
+                let triple = &triples[0];
+                let s = self.term_json(&triple.s, JsonPosition::Subject, graph_json);
+                let p = self.term_json(&triple.p, JsonPosition::Predicate, graph_json);
+                let o = self.term_json(&triple.o, JsonPosition::Object, graph_json);
+                quad_json(&s, &p, &o, &default_graph_json())
+            }
+            Term::Formula(_) => blank_node_json(&self.fresh_blank_id("unsupportedFormula")),
+            Term::Var(name) => blank_node_json(&format!("var_{}", sanitize_blank(name))),
+        }
+    }
+
+    fn graph_term_json(&mut self, term: &Term) -> String {
+        match term {
+            Term::Iri(_) | Term::Blank(_) => self.term_json(term, JsonPosition::Graph, &default_graph_json()),
+            _ => blank_node_json(&self.fresh_blank_id("graph")),
+        }
+    }
+
+    fn list_json(&mut self, items: &[Term], graph_json: &str) -> String {
+        if items.is_empty() { return named_node_json(RDF_NIL); }
+        let nodes: Vec<String> = (0..items.len()).map(|_| self.fresh_blank_id("rdfList")).collect();
+        for (idx, item) in items.iter().enumerate() {
+            let subject = blank_node_json(&nodes[idx]);
+            let value = self.term_json(item, JsonPosition::Object, graph_json);
+            let rest = if idx + 1 < nodes.len() { blank_node_json(&nodes[idx + 1]) } else { named_node_json(RDF_NIL) };
+            self.quads.push(quad_json(&subject, &named_node_json(RDF_FIRST), &value, graph_json));
+            self.quads.push(quad_json(&subject, &named_node_json(RDF_REST), &rest, graph_json));
+        }
+        blank_node_json(&nodes[0])
+    }
+
+    fn fresh_blank_id(&mut self, prefix: &str) -> String {
+        self.blank_counter += 1;
+        format!("{}{}", prefix, self.blank_counter)
+    }
+}
+
+#[derive(Clone, Copy)]
+enum JsonPosition { Subject, Predicate, Object, Graph }
+
+fn named_graph_fact(triple: &Triple) -> Option<(&Term, &[Triple])> {
+    match (&triple.p, &triple.o) {
+        (Term::Iri(p), Term::Formula(triples)) if p == LOG_NAME_OF => Some((&triple.s, triples)),
+        _ => None,
+    }
+}
+
+fn named_node_json(value: &str) -> String {
+    format!("{{\"termType\":\"NamedNode\",\"value\":\"{}\"}}", escape_json(value))
+}
+
+fn blank_node_json(value: &str) -> String {
+    format!("{{\"termType\":\"BlankNode\",\"value\":\"{}\"}}", escape_json(value))
+}
+
+fn literal_json(lit: &Literal) -> String {
+    let (language, datatype) = match lit.language.as_deref() {
+        Some(lang) if lang.contains("--") => (lang, "http://www.w3.org/1999/02/22-rdf-syntax-ns#dirLangString"),
+        Some(lang) => (lang, "http://www.w3.org/1999/02/22-rdf-syntax-ns#langString"),
+        None => ("", lit.datatype.as_deref().unwrap_or("http://www.w3.org/2001/XMLSchema#string")),
+    };
+    format!(
+        "{{\"termType\":\"Literal\",\"value\":\"{}\",\"language\":\"{}\",\"datatype\":{}}}",
+        escape_json(&lit.value),
+        escape_json(language),
+        named_node_json(datatype),
+    )
+}
+
+fn default_graph_json() -> String {
+    "{\"termType\":\"DefaultGraph\",\"value\":\"\"}".to_string()
+}
+
+fn quad_json(subject: &str, predicate: &str, object: &str, graph: &str) -> String {
+    format!("{{\"termType\":\"Quad\",\"value\":\"\",\"subject\":{},\"predicate\":{},\"object\":{},\"graph\":{}}}", subject, predicate, object, graph)
+}
+
+fn escape_json(s: &str) -> String {
+    let mut out = String::new();
+    for c in s.chars() {
+        match c {
+            '\\' => out.push_str("\\\\"),
+            '"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            '\u{0008}' => out.push_str("\\b"),
+            '\u{000C}' => out.push_str("\\f"),
+            c if c <= '\u{001F}' => out.push_str(&format!("\\u{:04X}", c as u32)),
+            other => out.push(other),
+        }
+    }
+    out
+}

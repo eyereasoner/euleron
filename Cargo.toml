@@ -15,6 +15,15 @@ path = "src/lib.rs"
 name = "eyeron"
 path = "src/main.rs"
 
+[[test]]
+name = "w3c_rdf"
+path = "tests/w3c_rdf.rs"
+harness = false
+
+[dependencies]
+ureq = "2"
+serde_json = "1"
+
 [profile.release]
 lto = true
 codegen-units = 1

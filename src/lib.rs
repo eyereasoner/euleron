@@ -12,8 +12,8 @@ pub mod reasoner;
 
 pub use ast::{Document, Literal, Rule, Term, Triple};
 pub use error::{EyeronError, Result};
-pub use parser::{is_rdf_message_log, parse_n3, parse_rdf_message_log};
-pub use printing::{document_debug, result_to_string, triples_to_n3};
+pub use parser::{is_rdf_message_log, parse_n3, parse_rdf12, parse_rdf_message_log, RdfFormat};
+pub use printing::{document_debug, rdf12_json, result_to_string, triples_to_n3};
 pub use reasoner::{reason as reason_document, ReasonerOptions, ReasonerResult};
 
 /// Parse an N3 string, run the forward reasoner, and return the N3 output for

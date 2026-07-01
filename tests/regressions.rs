@@ -1,4 +1,4 @@
-use eyeron::{is_rdf_message_log, parse_n3, parse_rdf_message_log, reason, reason_document, result_to_string, Document, ReasonerOptions};
+use eyeron::{is_rdf_message_log, parse_n3, parse_rdf12, parse_rdf_message_log, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
 
 fn check_golden_non_prefix_lines(name: &str, source: &str, golden: &str) -> std::result::Result<(), String> {
     let out = reason(source).map_err(|err| format!("{} failed: {}", name, err))?;
@@ -57,6 +57,52 @@ fn progress_line(message: &str) {
         }
     }
     eprint!("{}", line);
+}
+
+fn colour_enabled() -> bool {
+    if std::env::var_os("NO_COLOR").is_some() {
+        return false;
+    }
+    !matches!(std::env::var("CARGO_TERM_COLOR"), Ok(value) if value == "never")
+}
+
+fn green(text: &str) -> String {
+    if colour_enabled() {
+        format!("\x1b[32m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+fn yellow(text: &str) -> String {
+    if colour_enabled() {
+        format!("\x1b[33m{}\x1b[0m", text)
+    } else {
+        text.to_string()
+    }
+}
+
+
+#[test]
+fn rdf12_annotations_share_n3_lexer_parser_profile() {
+    let input = r#"
+        PREFIX : <http://example.org/>
+        :s :p :o {| :source :sensor |} .
+    "#;
+    let doc = parse_rdf12(input, Some("http://example.org/base"), RdfFormat::Turtle).unwrap();
+    let reifies = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies";
+    assert!(doc.facts.iter().any(|t| matches!(&t.p, eyeron::Term::Iri(p) if p == reifies)), "{:#?}", doc.facts);
+    assert!(doc.facts.iter().any(|t| matches!(&t.p, eyeron::Term::Iri(p) if p == "http://example.org/source")), "{:#?}", doc.facts);
+}
+
+#[test]
+fn rdf12_parenthesized_triple_terms_remain_terms() {
+    let input = r#"
+        PREFIX : <http://example.org/>
+        :s :p <<(:a :b :c)>> .
+    "#;
+    let doc = parse_rdf12(input, Some("http://example.org/base"), RdfFormat::Turtle).unwrap();
+    assert!(doc.facts.iter().any(|t| matches!(&t.o, eyeron::Term::Formula(inner) if inner.len() == 1)), "{:#?}", doc.facts);
 }
 
 #[test]
@@ -215,13 +261,14 @@ fn all_packaged_example_goldens_match_expected_lines() {
     for (name, source_path, golden_path) in cases {
         if SKIPPED_EXAMPLES.contains(&name.as_str()) {
             progress_line(&format!(
-                "skipping examples/{}.n3 (known scheduler/performance TODO)",
-                name
+                "example examples/{}.n3 ... {} (known scheduler/performance TODO)",
+                name,
+                yellow("ignored")
             ));
             continue;
         }
 
-        progress_line(&format!("checking examples/{}.n3", name));
+        progress_line(&format!("example examples/{}.n3 ... running", name));
         let started = std::time::Instant::now();
 
         let source = fs::read_to_string(&source_path)
@@ -255,8 +302,9 @@ fn all_packaged_example_goldens_match_expected_lines() {
 
         match rx.recv_timeout(timeout) {
             Ok(Ok(())) => progress_line(&format!(
-                "ok examples/{}.n3 ({:.3}s)",
+                "example examples/{}.n3 ... {} ({:.3}s)",
                 name,
+                green("ok"),
                 started.elapsed().as_secs_f64()
             )),
             Ok(Err(msg)) => panic!("{}", msg),
@@ -275,3 +323,41 @@ fn all_packaged_example_goldens_match_expected_lines() {
     }
 }
 
+
+#[test]
+fn rdf12_turtle_profile_parses_lists_through_shared_parser() {
+    let doc = eyeron::parse_rdf12(
+        r#"PREFIX : <http://example.org/>
+:s :p (1 2) ."#,
+        Some("http://example.org/base"),
+        eyeron::RdfFormat::Turtle,
+    ).unwrap();
+    let json = eyeron::rdf12_json(&doc);
+    assert!(json.contains("http://www.w3.org/1999/02/22-rdf-syntax-ns#first"), "{}", json);
+    assert!(json.contains("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"), "{}", json);
+}
+
+#[test]
+fn rdf12_trig_profile_materializes_named_graphs_as_quads() {
+    let doc = eyeron::parse_rdf12(
+        r#"PREFIX : <http://example.org/>
+:g { :s :p :o . }"#,
+        None,
+        eyeron::RdfFormat::Trig,
+    ).unwrap();
+    let json = eyeron::rdf12_json(&doc);
+    assert!(json.contains("\"graph\":{\"termType\":\"NamedNode\",\"value\":\"http://example.org/g\"}"), "{}", json);
+}
+
+#[test]
+fn rdf12_parenthesized_triple_terms_use_formula_term_representation() {
+    let doc = eyeron::parse_rdf12(
+        r#"PREFIX : <http://example.org/>
+:s :p <<(:a :b :c)>> ."#,
+        None,
+        eyeron::RdfFormat::Turtle,
+    ).unwrap();
+    let json = eyeron::rdf12_json(&doc);
+    assert!(json.contains("\"termType\":\"Quad\""), "{}", json);
+    assert!(json.contains("http://example.org/a"), "{}", json);
+}

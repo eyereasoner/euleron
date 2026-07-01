@@ -1,6 +1,6 @@
 use eyeron::error::{EyeronError, Result};
-use eyeron::parser::{is_rdf_message_log, parse_n3, parse_rdf_message_log};
-use eyeron::printing::{document_debug, result_to_string};
+use eyeron::parser::{is_rdf_message_log, parse_n3, parse_rdf12, parse_rdf_message_log, RdfFormat};
+use eyeron::printing::{document_debug, rdf12_json, result_to_string};
 use eyeron::reasoner::{reason, ReasonerOptions};
 use eyeron::Document;
 use std::env;
@@ -19,6 +19,9 @@ struct CliOptions {
     stream_messages: bool,
     super_restricted: bool,
     deterministic_skolem: bool,
+    rdf12_json: bool,
+    rdf12_format: Option<RdfFormat>,
+    base_iri: Option<String>,
     files: Vec<String>,
 }
 
@@ -52,11 +55,24 @@ fn run() -> Result<()> {
     let sources = read_sources(&opt.files)?;
     let mut merged = Document::new();
     for (label, text) in &sources {
-        let base = if label == "<stdin>" { None } else { path_to_file_iri(label).ok() };
-        match if is_rdf_message_log(text) { parse_rdf_message_log(text, base.as_deref()) } else { parse_n3(text, base.as_deref()) } {
+        let path_base = if label == "<stdin>" { None } else { path_to_file_iri(label).ok() };
+        let base = opt.base_iri.as_deref().or(path_base.as_deref());
+        let parsed = if opt.rdf12_json {
+            parse_rdf12(text, base, opt.rdf12_format.unwrap_or(RdfFormat::Turtle))
+        } else if is_rdf_message_log(text) {
+            parse_rdf_message_log(text, base)
+        } else {
+            parse_n3(text, base)
+        };
+        match parsed {
             Ok(doc) => merged.merge(doc),
             Err(err) => return Err(EyeronError::new(err.with_source_location(text, label))),
         }
+    }
+
+    if opt.rdf12_json {
+        print!("{}", rdf12_json(&merged));
+        return Ok(());
     }
 
     if opt.ast {
@@ -95,6 +111,20 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Eyeron", flag);
             }
             "--stream-messages" => opt.stream_messages = true,
+            "--rdf12-json" => opt.rdf12_json = true,
+            "--rdf12-format" => {
+                i += 1;
+                if i >= args.len() { return Err(EyeronError::new("--rdf12-format requires a value")); }
+                opt.rdf12_format = RdfFormat::parse(&args[i]);
+                if opt.rdf12_format.is_none() {
+                    return Err(EyeronError::new(format!("unknown RDF 1.2 format {}", args[i])));
+                }
+            }
+            "--base-iri" | "--base" => {
+                i += 1;
+                if i >= args.len() { return Err(EyeronError::new(format!("{} requires a value", args[i - 1]))); }
+                opt.base_iri = Some(args[i].clone());
+            }
             "--store-clear" | "--enforce-https" => {
                 eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Eyeron", args[i]);
             }
@@ -156,6 +186,9 @@ fn print_help() {
     println!("  -r, --rdf                     Enable RDF-compatible input mode; RDF Message Logs are replayed");
     println!("  -t, --stream                  Accepted; output is emitted after fixpoint");
     println!("      --stream-messages         Accept RDF Message Log input with VERSION/MESSAGE delimiters");
+    println!("      --rdf12-json              Parse RDF 1.2 syntax and emit JSON quads");
+    println!("      --rdf12-format FORMAT     RDF 1.2 format: turtle, n-triples, n-quads, or trig");
+    println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");
     println!("  -s, --super-restricted        Accepted for compatibility");
     println!("  -d, --deterministic-skolem    Accepted for compatibility");
     println!("  -v, --version                 Print version");

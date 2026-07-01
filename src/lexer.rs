@@ -4,13 +4,20 @@ use crate::error::{EyeronError, Result};
 pub enum TokenKind {
     AtPrefix,
     AtBase,
+    AtVersion,
     Prefix,
     Base,
+    Version,
     Iri(String),
     PName(String),
     Var(String),
     Blank(String),
     String(String),
+    StringSingle(String),
+    StringLong(String),
+    StringLongSingle(String),
+    StringLongExtraQuote(String),
+    StringLongSingleExtraQuote(String),
     Lang(String),
     Number(String),
     Boolean(bool),
@@ -20,10 +27,14 @@ pub enum TokenKind {
     Comma,
     LBrace,
     RBrace,
+    LAnnotation,
+    RAnnotation,
     LBracket,
     RBracket,
     LParen,
     RParen,
+    LTriple,
+    RTriple,
     Arrow,
     BackArrow,
     Reverse,
@@ -61,6 +72,10 @@ impl<'a> Lexer<'a> {
             };
 
             match ch {
+                '<' if self.starts_with("<<") => {
+                    self.bump(); self.bump();
+                    self.tokens.push(Token { kind: TokenKind::LTriple, offset });
+                }
                 '<' if self.starts_with("<=") => {
                     self.bump(); self.bump();
                     self.tokens.push(Token { kind: TokenKind::BackArrow, offset });
@@ -78,6 +93,10 @@ impl<'a> Lexer<'a> {
                     self.bump();
                     self.tokens.push(Token { kind: TokenKind::Equals, offset });
                 }
+                '>' if self.starts_with(">>") => {
+                    self.bump(); self.bump();
+                    self.tokens.push(Token { kind: TokenKind::RTriple, offset });
+                }
                 '^' if self.starts_with("^^") => {
                     self.bump(); self.bump();
                     self.tokens.push(Token { kind: TokenKind::HatHat, offset });
@@ -87,13 +106,21 @@ impl<'a> Lexer<'a> {
                 '.' => { self.bump(); self.tokens.push(Token { kind: TokenKind::Dot, offset }); }
                 ';' => { self.bump(); self.tokens.push(Token { kind: TokenKind::Semicolon, offset }); }
                 ',' => { self.bump(); self.tokens.push(Token { kind: TokenKind::Comma, offset }); }
+                '{' if self.starts_with("{|") => {
+                    self.bump(); self.bump();
+                    self.tokens.push(Token { kind: TokenKind::LAnnotation, offset });
+                }
+                '|' if self.starts_with("|}") => {
+                    self.bump(); self.bump();
+                    self.tokens.push(Token { kind: TokenKind::RAnnotation, offset });
+                }
                 '{' => { self.bump(); self.tokens.push(Token { kind: TokenKind::LBrace, offset }); }
                 '}' => { self.bump(); self.tokens.push(Token { kind: TokenKind::RBrace, offset }); }
                 '[' => { self.bump(); self.tokens.push(Token { kind: TokenKind::LBracket, offset }); }
                 ']' => { self.bump(); self.tokens.push(Token { kind: TokenKind::RBracket, offset }); }
                 '(' => { self.bump(); self.tokens.push(Token { kind: TokenKind::LParen, offset }); }
                 ')' => { self.bump(); self.tokens.push(Token { kind: TokenKind::RParen, offset }); }
-                _ if ch.is_ascii_digit() || ((ch == '-' || ch == '+') && self.peek_next().is_some_and(|c| c.is_ascii_digit())) => self.read_number()?,
+                _ if ch.is_ascii_digit() || ((ch == '-' || ch == '+') && self.peek_next().is_some_and(|c| c.is_ascii_digit() || (c == '.' && self.peek_third().is_some_and(|d| d.is_ascii_digit())))) => self.read_number()?,
                 _ => self.read_word()?,
             }
         }
@@ -139,7 +166,7 @@ impl<'a> Lexer<'a> {
                     if is_forbidden_iri_char(c) { return Err(EyeronError::at("forbidden character in IRI reference", offset)); }
                     value.push(c);
                 } else {
-                    value.push(esc);
+                    return Err(EyeronError::at(format!("invalid IRI escape \\{}", esc), offset));
                 }
             } else {
                 if is_forbidden_iri_char(ch) {
@@ -174,12 +201,20 @@ impl<'a> Lexer<'a> {
                     }
                     if run >= 3 {
                         for _ in 0..(run - 3) { value.push(quote); }
-                        self.tokens.push(Token { kind: TokenKind::String(value), offset });
+                        let kind = if run > 3 {
+                            if quote == '"' { TokenKind::StringLongExtraQuote(value) } else { TokenKind::StringLongSingleExtraQuote(value) }
+                        } else if quote == '"' {
+                            TokenKind::StringLong(value)
+                        } else {
+                            TokenKind::StringLongSingle(value)
+                        };
+                        self.tokens.push(Token { kind, offset });
                         return Ok(());
                     }
                     for _ in 0..run { value.push(quote); }
                 } else {
-                    self.tokens.push(Token { kind: TokenKind::String(value), offset });
+                    let kind = if quote == '"' { TokenKind::String(value) } else { TokenKind::StringSingle(value) };
+                    self.tokens.push(Token { kind, offset });
                     return Ok(());
                 }
             } else if !triple && matches!(ch, '\n' | '\r') {
@@ -209,7 +244,7 @@ impl<'a> Lexer<'a> {
                         if is_forbidden_string_char(c) { return Err(EyeronError::at("forbidden character in string literal", offset)); }
                         value.push(c);
                     }
-                    other => value.push(other),
+                    other => return Err(EyeronError::at(format!("invalid string escape \\{}", other), offset)),
                 }
             } else {
                 value.push(ch);
@@ -249,9 +284,25 @@ impl<'a> Lexer<'a> {
         let offset = self.pos;
         let mut word = String::new();
         while let Some(ch) = self.peek() {
-            if ch.is_whitespace() || matches!(ch, '{' | '}' | '[' | ']' | '(' | ')' | ',' | ';') { break; }
+            if ch == '\\' {
+                word.push(ch);
+                self.bump();
+                if let Some(next) = self.peek() {
+                    word.push(next);
+                    self.bump();
+                }
+                continue;
+            }
+            if ch.is_whitespace() || matches!(ch, '{' | '}' | '[' | ']' | '(' | ')' | ',' | ';' | '|' | '"' | '\'') { break; }
             if ch == '#' { break; }
-            if ch == '.' { break; }
+            if word.starts_with("_:") && word.len() > 2 && ch == ':' { break; }
+            if ch == '.' {
+                match self.peek_next() {
+                    None => break,
+                    Some(next) if next.is_whitespace() || matches!(next, '{' | '}' | '[' | ']' | '(' | ')' | ',' | ';' | '|') => break,
+                    _ => {}
+                }
+            }
             if ch == '<' || ch == '>' || ch == '=' { break; }
             word.push(ch);
             self.bump();
@@ -260,12 +311,20 @@ impl<'a> Lexer<'a> {
             return Err(EyeronError::at(format!("unexpected character {:?}", self.peek()), offset));
         }
         let lower = word.to_ascii_lowercase();
+        if word.starts_with("@prefix") && word.len() > "@prefix".len() {
+            let suffix = word["@prefix".len()..].to_string();
+            self.tokens.push(Token { kind: TokenKind::AtPrefix, offset });
+            self.tokens.push(Token { kind: TokenKind::PName(suffix), offset: offset + "@prefix".len() });
+            return Ok(());
+        }
         let kind = match lower.as_str() {
-            "@prefix" => TokenKind::AtPrefix,
-            "@base" => TokenKind::AtBase,
+            _ if word == "@prefix" => TokenKind::AtPrefix,
+            _ if word == "@base" => TokenKind::AtBase,
+            _ if word == "@version" => TokenKind::AtVersion,
             "prefix" => TokenKind::Prefix,
             "base" => TokenKind::Base,
-            "a" => TokenKind::A,
+            "version" => TokenKind::Version,
+            _ if word == "a" => TokenKind::A,
             "true" => TokenKind::Boolean(true),
             "false" => TokenKind::Boolean(false),
             _ if word.starts_with('@') => TokenKind::Lang(word[1..].to_string()),
@@ -288,6 +347,13 @@ impl<'a> Lexer<'a> {
         it.next()
     }
 
+    fn peek_third(&self) -> Option<char> {
+        let mut it = self.input[self.pos..].chars();
+        it.next()?;
+        it.next()?;
+        it.next()
+    }
+
     fn bump(&mut self) -> Option<char> {
         let ch = self.peek()?;
         self.pos += ch.len_utf8();
@@ -296,9 +362,7 @@ impl<'a> Lexer<'a> {
 }
 
 fn is_forbidden_iri_char(ch: char) -> bool {
-    ch.is_control() || ch.is_whitespace() || matches!(ch, '<' | '>' | '{' | '}' | '|' | '^' | '`' | '\\')
+    ch.is_control() || ch.is_whitespace() || matches!(ch, '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '\\')
 }
 
-fn is_forbidden_string_char(ch: char) -> bool {
-    matches!(ch as u32, 0x00 | 0xFFFE | 0xFFFF)
-}
+fn is_forbidden_string_char(_ch: char) -> bool { false }

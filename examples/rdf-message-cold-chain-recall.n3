@@ -7,7 +7,7 @@
 #   eyeron -r examples/rdf-message-cold-chain-recall.n3 examples/input/rdf-message-cold-chain-recall.trig
 #
 # See the README section on RDF Message Log replay under -r:
-#   https://eyereasoner.github.io/eyeling/#rdf-message-logs
+#   ../README.md#rdf-messages
 #
 # This example is meant to be operationally obvious: a cold-chain shipment has
 # many historical telemetry messages, a checkpoint says which prefix was already
