@@ -2,6 +2,7 @@
 name = "eyeron"
 version = "0.2.0"
 edition = "2021"
+default-run = "eyeron"
 authors = ["Jos De Roo"]
 license = "MIT"
 description = "A native Rust Notation3 reasoner."
