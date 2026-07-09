@@ -189,8 +189,8 @@ fn print_help() {
     println!("  -a, --ast                     Print parsed AST/debug form and exit");
     println!("  -p, --proof                   Enable N3 proof explanations");
     println!("  -r, --rdf                     Enable RDF-compatible input mode; RDF Message Logs are replayed");
-    println!("  -t, --stream                  Accepted; output is emitted after fixpoint");
-    println!("      --stream-messages         Accept RDF Message Log input with VERSION/MESSAGE delimiters");
+    println!("  -t, --stream                  Output is emitted after fixpoint");
+    println!("      --stream-messages         RDF Message Log input with VERSION/MESSAGE delimiters");
     println!("      --rdf12-json              Parse RDF 1.2 syntax and emit JSON quads");
     println!("      --rdf12-format FORMAT     RDF 1.2 format: turtle, n-triples, n-quads, or trig");
     println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");
