@@ -14,6 +14,24 @@ pub fn result_to_string(prefixes: &BTreeMap<String, String>, triples: &[Triple])
     triples_to_n3(prefixes, triples)
 }
 
+
+pub fn triple_to_n3(prefixes: &BTreeMap<String, String>, t: &Triple) -> String {
+    if is_implication_triple(t) {
+        implication_to_n3(t, prefixes).trim_end().to_string()
+    } else {
+        format!(
+            "{} {} {} .",
+            term_to_n3(&t.s, prefixes, Position::Subject),
+            term_to_n3(&t.p, prefixes, Position::Predicate),
+            term_to_n3(&t.o, prefixes, Position::Object),
+        )
+    }
+}
+
+pub fn term_to_n3_object(term: &Term, prefixes: &BTreeMap<String, String>) -> String {
+    term_to_n3(term, prefixes, Position::Object)
+}
+
 pub fn triples_to_n3(prefixes: &BTreeMap<String, String>, triples: &[Triple]) -> String {
     if triples.is_empty() { return String::new(); }
     let used = used_prefixes(prefixes, triples);

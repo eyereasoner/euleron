@@ -89,7 +89,7 @@ cargo run -- --rdf12-json --rdf12-format trig - < input.trig
 
 `--rdf12-json` emits machine-readable JSON quads for parser inspection. This mode is intended for conformance development and shares Eyeron's lexer, term parser, directive handling, list parser, blank-node property-list parser, and quoted-triple/formula representation with ordinary N3 parsing.
 
-The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. Flags that are not implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
+The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations; flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 
@@ -114,6 +114,14 @@ Output:
 
 :Socrates a :Mortal .
 ```
+
+Proof output can be enabled with `-p`/`--proof`:
+
+```bash
+cargo run -- --proof examples/socrates.n3
+```
+
+In proof mode Eyeron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`.
 
 ## Library use
 

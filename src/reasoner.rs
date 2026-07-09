@@ -191,10 +191,11 @@ impl AgendaIndex {
 pub struct ReasonerOptions {
     pub max_iterations: usize,
     pub trace: bool,
+    pub proof: bool,
 }
 
 impl Default for ReasonerOptions {
-    fn default() -> Self { Self { max_iterations: 10_000, trace: false } }
+    fn default() -> Self { Self { max_iterations: 10_000, trace: false, proof: false } }
 }
 
 #[derive(Debug, Clone)]
@@ -202,6 +203,23 @@ pub struct ReasonerResult {
     pub explicit: Vec<Triple>,
     pub derived: Vec<Triple>,
     pub closure: Vec<Triple>,
+    pub proofs: Vec<DerivedFact>,
+    pub rules: Vec<Rule>,
+}
+
+#[derive(Debug, Clone)]
+pub struct DerivedFact {
+    pub fact: Triple,
+    pub rule: Rule,
+    pub premises: Vec<Triple>,
+    pub bindings: Bindings,
+}
+
+#[derive(Debug, Clone)]
+pub enum ProofNode {
+    Rule { df: DerivedFact, children: Vec<ProofNode> },
+    Fact { fact: Triple, source: Option<SourceRef> },
+    Builtin { fact: Triple, builtin: Term },
 }
 
 pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
@@ -224,6 +242,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
     let mut agenda_cursor = 0usize;
     let mut generated_rule_facts = HashSet::<Triple>::new();
     let mut derived = Vec::<Triple>::new();
+    let mut proofs = Vec::<DerivedFact>::new();
     let mut iteration = 0usize;
 
     loop {
@@ -262,7 +281,9 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
                     &explicit_seen,
                     &mut generated_rule_facts,
                     &mut derived,
+                    &mut proofs,
                     &mut pending_rules,
+                    options.proof,
                 );
 
                 if rules_changed {
@@ -298,7 +319,9 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
                     &explicit_seen,
                     &mut generated_rule_facts,
                     &mut derived,
+                    &mut proofs,
                     &mut pending_rules,
+                    options.proof,
                 );
             }
         }
@@ -315,7 +338,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
         }
     }
 
-    ReasonerResult { explicit: doc.facts.clone(), derived, closure }
+    ReasonerResult { explicit: doc.facts.clone(), derived, closure, proofs, rules: active_rules }
 }
 
 fn emit_conclusions(
@@ -327,7 +350,9 @@ fn emit_conclusions(
     explicit_seen: &HashSet<Triple>,
     generated_rule_facts: &mut HashSet<Triple>,
     derived: &mut Vec<Triple>,
+    proofs: &mut Vec<DerivedFact>,
     pending_rules: &mut Vec<Rule>,
+    capture_proof: bool,
 ) -> bool {
     let mut rules_changed = false;
     let mut blank_map = BTreeMap::<String, Term>::new();
@@ -338,6 +363,7 @@ fn emit_conclusions(
         if is_unquote_instruction(&t) {
             if let Term::Formula(triples) = t.o {
                 for expanded in triples {
+                    let proof = if capture_proof { Some(derived_fact_record(expanded.clone(), rule, bindings)) } else { None };
                     if insert_materialized_triple(
                         expanded,
                         closure,
@@ -346,6 +372,8 @@ fn emit_conclusions(
                         explicit_seen,
                         generated_rule_facts,
                         derived,
+                        proofs,
+                        proof,
                         pending_rules,
                     ) {
                         rules_changed = true;
@@ -355,6 +383,7 @@ fn emit_conclusions(
             continue;
         }
 
+        let proof = if capture_proof { Some(derived_fact_record(t.clone(), rule, bindings)) } else { None };
         if insert_materialized_triple(
             t,
             closure,
@@ -363,6 +392,8 @@ fn emit_conclusions(
             explicit_seen,
             generated_rule_facts,
             derived,
+            proofs,
+            proof,
             pending_rules,
         ) {
             rules_changed = true;
@@ -370,6 +401,19 @@ fn emit_conclusions(
     }
 
     rules_changed
+}
+
+
+fn derived_fact_record(fact: Triple, rule: &Rule, bindings: &Bindings) -> DerivedFact {
+    DerivedFact {
+        fact,
+        rule: rule.clone(),
+        premises: rule.premise.iter().map(|premise| resolve_pattern_triple(premise, bindings)).collect(),
+        bindings: bindings
+            .iter()
+            .map(|(key, value)| (key.clone(), resolve(value, bindings)))
+            .collect(),
+    }
 }
 
 fn is_unquote_instruction(t: &Triple) -> bool {
@@ -384,13 +428,18 @@ fn insert_materialized_triple(
     explicit_seen: &HashSet<Triple>,
     generated_rule_facts: &mut HashSet<Triple>,
     derived: &mut Vec<Triple>,
+    proofs: &mut Vec<DerivedFact>,
+    proof: Option<DerivedFact>,
     pending_rules: &mut Vec<Rule>,
 ) -> bool {
     if !admissible_fact(&t) { return false; }
     if !seen.insert(t.clone()) { return false; }
 
     let mut rules_changed = false;
-    if !explicit_seen.contains(&t) { derived.push(t.clone()); }
+    if !explicit_seen.contains(&t) {
+        derived.push(t.clone());
+        if let Some(proof) = proof { proofs.push(proof); }
+    }
     if let Some(new_rule) = rule_from_triple(&t) {
         if generated_rule_facts.insert(t.clone()) {
             pending_rules.push(new_rule);
@@ -461,6 +510,11 @@ fn term_contains_blank(term: &Term) -> bool {
     }
 }
 
+fn is_builtin_premise(triple: &Triple) -> bool {
+    let Term::Iri(iri) = &triple.p else { return false; };
+    is_builtin_iri(iri)
+}
+
 fn is_builtin_iri(iri: &str) -> bool {
     matches!(iri,
         LOG_EQUAL_TO | LOG_NOT_EQUAL_TO | LOG_COLLECT_ALL_IN | LOG_FOR_ALL_IN
@@ -515,10 +569,10 @@ fn rule_to_triple(rule: &Rule, prefix: &str) -> Triple {
 fn rule_from_triple(t: &Triple) -> Option<Rule> {
     match (&t.s, &t.p, &t.o) {
         (Term::Formula(premise), Term::Iri(p), Term::Formula(conclusion)) if p == LOG_IMPLIES => {
-            Some(Rule { premise: premise.clone(), conclusion: conclusion.clone(), is_forward: true })
+            Some(Rule::new(premise.clone(), conclusion.clone(), true))
         }
         (Term::Formula(head), Term::Iri(p), Term::Formula(body)) if p == LOG_IMPLIED_BY => {
-            Some(Rule { premise: body.clone(), conclusion: head.clone(), is_forward: false })
+            Some(Rule::new(body.clone(), head.clone(), false))
         }
         _ => None,
     }
@@ -918,6 +972,98 @@ fn solve_backward_goal(
     backward_stack.remove(&stack_key);
     out
 }
+ 
+
+pub fn find_backward_proof_for_goal(goal: &Triple, facts: &[Triple], rules: &[Rule], max_depth: usize) -> Option<ProofNode> {
+    let mut fact_index = FactIndex::default();
+    for (idx, fact) in facts.iter().enumerate() {
+        fact_index.insert(idx, fact);
+    }
+    let mut visited = HashSet::<String>::new();
+    let mut budget = SearchBudget::default();
+    find_backward_proof_inner(goal, facts, &fact_index, rules, 0, max_depth, &mut visited, &mut budget)
+}
+
+fn find_backward_proof_inner(
+    goal: &Triple,
+    facts: &[Triple],
+    fact_index: &FactIndex,
+    rules: &[Rule],
+    depth: usize,
+    max_depth: usize,
+    visited: &mut HashSet<String>,
+    budget: &mut SearchBudget,
+) -> Option<ProofNode> {
+    if depth > max_depth || !budget.tick() { return None; }
+
+    let empty = BTreeMap::new();
+    for fact in fact_index.candidates(facts, goal, &empty) {
+        let mut local = BTreeMap::new();
+        if match_triple(goal, fact, &mut local) {
+            return Some(ProofNode::Fact { fact: fact.clone(), source: None });
+        }
+    }
+
+    if is_builtin_premise(goal) {
+        return Some(ProofNode::Builtin { fact: goal.clone(), builtin: goal.p.clone() });
+    }
+
+    let Term::Iri(goal_pred) = &goal.p else { return None; };
+    let key = backward_goal_key(goal);
+    if !visited.insert(key.clone()) { return None; }
+
+    let mut out = None;
+    for (idx, rule) in rules.iter().enumerate() {
+        if rule.is_forward || rule.conclusion.len() != 1 { continue; }
+        let raw_head = &rule.conclusion[0];
+        if let Term::Iri(head_pred) = &raw_head.p {
+            if head_pred != goal_pred { continue; }
+        }
+
+        let prefix = fresh_backward_prefix(depth, idx, goal, &BTreeMap::new());
+        let renamed = standardize_apart(rule, &prefix);
+        let head = &renamed.conclusion[0];
+        let mut initial = BTreeMap::new();
+        if !unify_triple(head, goal, &mut initial) { continue; }
+
+        let mut body_matches = Vec::new();
+        let mut local_stack = visited.clone();
+        match_premise_at(
+            &renamed.premise,
+            facts,
+            Some(fact_index),
+            rules,
+            0,
+            initial,
+            depth + 1,
+            &mut local_stack,
+            budget,
+            &mut body_matches,
+        );
+        let Some(subst) = body_matches.into_iter().next() else { continue; };
+        let subst = canonicalize_bindings(&subst);
+        let fact = resolve_pattern_triple(head, &subst);
+        let premises = renamed.premise.iter().map(|prem| resolve_pattern_triple(prem, &subst)).collect::<Vec<_>>();
+        let bindings = subst.iter().map(|(k, v)| (k.clone(), resolve(v, &subst))).collect();
+        let df = DerivedFact { fact, rule: renamed, premises: premises.clone(), bindings };
+        let children = premises
+            .iter()
+            .map(|prem| {
+                if is_builtin_premise(prem) {
+                    ProofNode::Builtin { fact: prem.clone(), builtin: prem.p.clone() }
+                } else {
+                    find_backward_proof_inner(prem, facts, fact_index, rules, depth + 1, max_depth, visited, budget)
+                        .unwrap_or_else(|| ProofNode::Fact { fact: prem.clone(), source: None })
+                }
+            })
+            .collect();
+        out = Some(ProofNode::Rule { df, children });
+        break;
+    }
+
+    visited.remove(&key);
+    out
+}
 
 
 fn fresh_backward_prefix(depth: usize, rule_index: usize, goal: &Triple, bindings: &Bindings) -> String {
@@ -943,10 +1089,44 @@ fn fresh_backward_prefix(depth: usize, rule_index: usize, goal: &Triple, binding
 }
 
 fn standardize_apart(rule: &Rule, prefix: &str) -> Rule {
-    Rule {
-        premise: rule.premise.iter().map(|t| rename_triple(t, prefix)).collect(),
-        conclusion: rule.conclusion.iter().map(|t| rename_triple(t, prefix)).collect(),
-        is_forward: rule.is_forward,
+    let mut out = Rule::new(
+        rule.premise.iter().map(|t| rename_triple(t, prefix)).collect(),
+        rule.conclusion.iter().map(|t| rename_triple(t, prefix)).collect(),
+        rule.is_forward,
+    )
+    .with_source(rule.source.clone());
+    out.proof_var_source_names = standardized_var_source_names(rule, prefix);
+    out
+}
+
+fn standardized_var_source_names(rule: &Rule, prefix: &str) -> BTreeMap<String, String> {
+    let mut vars = HashSet::new();
+    for triple in rule.premise.iter().chain(rule.conclusion.iter()) {
+        collect_var_names_triple(triple, &mut vars);
+    }
+    let mut out = BTreeMap::new();
+    for name in vars {
+        out.insert(format!("{}{}", prefix, name), name);
+    }
+    out
+}
+
+fn collect_var_names_triple(triple: &Triple, out: &mut HashSet<String>) {
+    collect_var_names_term(&triple.s, out);
+    collect_var_names_term(&triple.p, out);
+    collect_var_names_term(&triple.o, out);
+}
+
+fn collect_var_names_term(term: &Term, out: &mut HashSet<String>) {
+    match term {
+        Term::Var(name) => { out.insert(name.clone()); }
+        Term::List(items) => {
+            for item in items { collect_var_names_term(item, out); }
+        }
+        Term::Formula(triples) => {
+            for triple in triples { collect_var_names_triple(triple, out); }
+        }
+        _ => {}
     }
 }
 

@@ -1,35 +1,29 @@
 use crate::ast::*;
 use crate::error::{EyeronError, Result};
 use crate::lexer::{lex, Token, TokenKind};
+use crate::rdf_compat::RdfFormat;
 
 pub fn parse_n3(input: &str, base_iri: Option<&str>) -> Result<Document> {
+    parse_n3_with_source(input, base_iri, None)
+}
+
+pub fn parse_n3_with_source(input: &str, base_iri: Option<&str>, source_label: Option<&str>) -> Result<Document> {
     let tokens = lex(input)?;
-    Parser::new(tokens, base_iri).parse_document()
+    let line_starts = line_starts(input);
+    Parser::new(tokens, base_iri).with_source(source_label, line_starts).parse_document()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum RdfFormat {
-    Turtle,
-    NTriples,
-    NQuads,
-    Trig,
-}
-
-impl RdfFormat {
-    pub fn parse(value: &str) -> Option<Self> {
-        match value {
-            "turtle" | "ttl" => Some(Self::Turtle),
-            "n-triples" | "ntriples" | "nt" => Some(Self::NTriples),
-            "n-quads" | "nquads" | "nq" => Some(Self::NQuads),
-            "trig" => Some(Self::Trig),
-            _ => None,
-        }
-    }
-}
-
-pub fn parse_rdf12(input: &str, base_iri: Option<&str>, format: RdfFormat) -> Result<Document> {
+pub(crate) fn parse_rdf12_compat(input: &str, base_iri: Option<&str>, format: RdfFormat) -> Result<Document> {
     let tokens = lex(input)?;
     Parser::with_profile(tokens, base_iri, ParserProfile::rdf12(format)).parse_document()
+}
+
+fn line_starts(input: &str) -> Vec<usize> {
+    let mut starts = vec![0];
+    for (idx, ch) in input.char_indices() {
+        if ch == '\n' { starts.push(idx + ch.len_utf8()); }
+    }
+    starts
 }
 
 /// Parse an RDF Message Log using the draft `VERSION "1.2-messages"` /
@@ -263,6 +257,8 @@ struct Parser {
     doc: Document,
     blank_counter: usize,
     profile: ParserProfile,
+    source_label: Option<String>,
+    line_starts: Vec<usize>,
 }
 
 impl Parser {
@@ -285,7 +281,22 @@ impl Parser {
         doc.prefixes.insert("math".to_string(), "http://www.w3.org/2000/10/swap/math#".to_string());
         doc.prefixes.insert("string".to_string(), "http://www.w3.org/2000/10/swap/string#".to_string());
         doc.prefixes.insert("time".to_string(), "http://www.w3.org/2000/10/swap/time#".to_string());
-        Self { tokens, pos: 0, doc, blank_counter: 0, profile }
+        Self { tokens, pos: 0, doc, blank_counter: 0, profile, source_label: None, line_starts: Vec::new() }
+    }
+
+    fn with_source(mut self, source_label: Option<&str>, line_starts: Vec<usize>) -> Self {
+        self.source_label = source_label.map(ToOwned::to_owned);
+        self.line_starts = line_starts;
+        self
+    }
+
+    fn source_ref_at(&self, offset: usize) -> Option<SourceRef> {
+        let label = self.source_label.as_ref()?;
+        let line = match self.line_starts.binary_search(&offset) {
+            Ok(idx) => idx + 1,
+            Err(idx) => idx,
+        };
+        Some(SourceRef { label: label.clone(), line: line.max(1) })
     }
 
     fn parse_document(mut self) -> Result<Document> {
@@ -509,17 +520,18 @@ impl Parser {
     }
 
     fn parse_true_formula_statement(&mut self) -> Result<()> {
+        let source = self.source_ref_at(self.peek().offset);
         self.advance();
         match self.peek_kind() {
             TokenKind::Arrow => {
                 self.advance();
                 let rhs = self.parse_forward_rule_rhs()?;
-                self.doc.rules.push(Rule { premise: Vec::new(), conclusion: rhs, is_forward: true });
+                self.doc.rules.push(Rule::new(Vec::new(), rhs, true).with_source(source.clone()));
             }
             TokenKind::BackArrow => {
                 self.advance();
                 let rhs = self.parse_formula_or_true()?;
-                self.doc.rules.push(Rule { premise: rhs, conclusion: Vec::new(), is_forward: false });
+                self.doc.rules.push(Rule::new(rhs, Vec::new(), false).with_source(source.clone()));
             }
             _ => {
                 // `true false true .` is a valid N3 triple with boolean terms.
@@ -532,26 +544,27 @@ impl Parser {
     }
 
     fn parse_formula_statement(&mut self) -> Result<()> {
+        let source = self.source_ref_at(self.peek().offset);
         let lhs = self.parse_formula()?;
         match self.peek_kind() {
             TokenKind::Arrow => {
                 self.advance();
                 let rhs = self.parse_forward_rule_rhs()?;
-                self.doc.rules.push(Rule { premise: lhs, conclusion: rhs, is_forward: true });
+                self.doc.rules.push(Rule::new(lhs, rhs, true).with_source(source.clone()));
             }
             TokenKind::BackArrow => {
                 self.advance();
                 let rhs = self.parse_formula_or_true()?;
                 // `{ head } <= { body }` is a backward rule: use it
                 // goal-directed when a forward premise asks for `head`.
-                self.doc.rules.push(Rule { premise: rhs, conclusion: lhs, is_forward: false });
+                self.doc.rules.push(Rule::new(rhs, lhs, false).with_source(source.clone()));
             }
             _ => {
                 let predicate = self.parse_verb()?;
                 match predicate {
                     Term::Iri(ref iri) if iri == LOG_QUERY => {
                         let rhs = self.parse_formula_or_true()?;
-                        self.doc.rules.push(Rule { premise: lhs, conclusion: rhs, is_forward: true });
+                        self.doc.rules.push(Rule::new(lhs, rhs, true).with_source(source.clone()));
                     }
                     other => {
                         // Otherwise the leading formula is an ordinary term subject, e.g.

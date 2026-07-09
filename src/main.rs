@@ -1,6 +1,7 @@
 use eyeron::error::{EyeronError, Result};
-use eyeron::parser::{is_rdf_message_log, parse_n3, parse_rdf12, parse_rdf_message_log, RdfFormat};
+use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, RdfFormat};
 use eyeron::printing::{document_debug, rdf12_json, result_to_string};
+use eyeron::proof::proof_to_n3;
 use eyeron::reasoner::{reason, ReasonerOptions};
 use eyeron::Document;
 use std::env;
@@ -35,9 +36,6 @@ fn main() {
 fn run() -> Result<()> {
     let opt = parse_args(env::args().skip(1).collect())?;
 
-    if opt.proof {
-        eprintln!("warning: --proof is accepted but proof comments are not implemented in Eyeron yet");
-    }
     if opt.rdf {
         // RDF compatibility mode is accepted.  Files using VERSION "1.2-messages"
         // are replayed as RDF Message Logs; other files use the N3/Turtle subset parser.
@@ -61,6 +59,8 @@ fn run() -> Result<()> {
             parse_rdf12(text, base, opt.rdf12_format.unwrap_or(RdfFormat::Turtle))
         } else if is_rdf_message_log(text) {
             parse_rdf_message_log(text, base)
+        } else if opt.proof {
+            parse_n3_with_source(text, base, Some(label))
         } else {
             parse_n3(text, base)
         };
@@ -80,8 +80,13 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let result = reason(&merged, &ReasonerOptions::default());
-    print!("{}", result_to_string(&merged.prefixes, &result.derived));
+    let reasoner_options = ReasonerOptions { proof: opt.proof, ..ReasonerOptions::default() };
+    let result = reason(&merged, &reasoner_options);
+    if opt.proof {
+        print!("{}", proof_to_n3(&merged.prefixes, &result));
+    } else {
+        print!("{}", result_to_string(&merged.prefixes, &result.derived));
+    }
     Ok(())
 }
 
@@ -99,7 +104,7 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 std::process::exit(0);
             }
             "-a" | "--ast" => opt.ast = true,
-            "-p" | "--proof" => opt.proof = true,
+            "-p" | "--proof" | "--proof-comments" => opt.proof = true,
             "-r" | "--rdf" => opt.rdf = true,
             "-t" | "--stream" => opt.stream = true,
             "-s" | "--super-restricted" => opt.super_restricted = true,
@@ -182,7 +187,7 @@ fn print_help() {
     println!();
     println!("Options:");
     println!("  -a, --ast                     Print parsed AST/debug form and exit");
-    println!("  -p, --proof                   Accepted; proof comments not implemented yet");
+    println!("  -p, --proof                   Enable N3 proof explanations");
     println!("  -r, --rdf                     Enable RDF-compatible input mode; RDF Message Logs are replayed");
     println!("  -t, --stream                  Accepted; output is emitted after fixpoint");
     println!("      --stream-messages         Accept RDF Message Log input with VERSION/MESSAGE delimiters");

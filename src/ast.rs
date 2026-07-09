@@ -157,11 +157,30 @@ impl Triple {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct SourceRef {
+    pub label: String,
+    pub line: usize,
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Rule {
     pub premise: Vec<Triple>,
     pub conclusion: Vec<Triple>,
     pub is_forward: bool,
+    pub source: Option<SourceRef>,
+    pub proof_var_source_names: BTreeMap<String, String>,
+}
+
+impl Rule {
+    pub fn new(premise: Vec<Triple>, conclusion: Vec<Triple>, is_forward: bool) -> Self {
+        Self { premise, conclusion, is_forward, source: None, proof_var_source_names: BTreeMap::new() }
+    }
+
+    pub fn with_source(mut self, source: Option<SourceRef>) -> Self {
+        self.source = source;
+        self
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
