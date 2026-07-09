@@ -201,6 +201,7 @@ impl Default for ReasonerOptions {
 #[derive(Debug, Clone)]
 pub struct ReasonerResult {
     pub explicit: Vec<Triple>,
+    pub explicit_sources: BTreeMap<Triple, SourceRef>,
     pub derived: Vec<Triple>,
     pub closure: Vec<Triple>,
     pub proofs: Vec<DerivedFact>,
@@ -338,7 +339,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
         }
     }
 
-    ReasonerResult { explicit: doc.facts.clone(), derived, closure, proofs, rules: active_rules }
+    ReasonerResult { explicit: doc.facts.clone(), explicit_sources: doc.fact_sources.clone(), derived, closure, proofs, rules: active_rules }
 }
 
 fn emit_conclusions(

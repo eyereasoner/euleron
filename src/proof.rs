@@ -22,6 +22,7 @@ pub fn proof_to_n3(prefixes: &BTreeMap<String, String>, result: &ReasonerResult)
             &proof,
             &derived_by_fact,
             &explicit_facts,
+            &result.explicit_sources,
             &result.explicit,
             &result.rules,
         );
@@ -82,12 +83,13 @@ fn collect_proof_entries(
     root: &DerivedFact,
     derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
     explicit_facts: &BTreeSet<Triple>,
+    explicit_sources: &BTreeMap<Triple, SourceRef>,
     base_facts: &[Triple],
     rules: &[Rule],
 ) -> Vec<ProofEntry> {
     let mut entries = Vec::<ProofEntry>::new();
     let mut seen = HashSet::<String>::new();
-    visit_derived_fact(root, derived_by_fact, explicit_facts, base_facts, rules, &mut seen, &mut entries, None);
+    visit_derived_fact(root, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, &mut seen, &mut entries, None);
     entries
 }
 
@@ -95,6 +97,7 @@ fn visit_derived_fact(
     proof: &DerivedFact,
     derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
     explicit_facts: &BTreeSet<Triple>,
+    explicit_sources: &BTreeMap<Triple, SourceRef>,
     base_facts: &[Triple],
     rules: &[Rule],
     seen: &mut HashSet<String>,
@@ -106,12 +109,12 @@ fn visit_derived_fact(
     entries.push(ProofEntry::Rule(proof.clone()));
 
     if let Some(children) = children {
-        for child in children { visit_proof_node(child, derived_by_fact, explicit_facts, base_facts, rules, seen, entries); }
+        for child in children { visit_proof_node(child, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries); }
         return;
     }
 
     for premise in &proof.premises {
-        visit_premise(premise, derived_by_fact, explicit_facts, base_facts, rules, seen, entries, Some(proof));
+        visit_premise(premise, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries, Some(proof));
     }
 }
 
@@ -119,6 +122,7 @@ fn visit_proof_node(
     node: &ProofNode,
     derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
     explicit_facts: &BTreeSet<Triple>,
+    explicit_sources: &BTreeMap<Triple, SourceRef>,
     base_facts: &[Triple],
     rules: &[Rule],
     seen: &mut HashSet<String>,
@@ -126,9 +130,12 @@ fn visit_proof_node(
 ) {
     match node {
         ProofNode::Rule { df, children } => {
-            visit_derived_fact(df, derived_by_fact, explicit_facts, base_facts, rules, seen, entries, Some(children));
+            visit_derived_fact(df, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries, Some(children));
         }
-        ProofNode::Fact { fact, source } => remember_entry(ProofEntry::Fact { fact: fact.clone(), source: source.clone() }, seen, entries),
+        ProofNode::Fact { fact, source } => {
+            let source = source.clone().or_else(|| explicit_sources.get(fact).cloned());
+            remember_entry(ProofEntry::Fact { fact: fact.clone(), source }, seen, entries)
+        }
         ProofNode::Builtin { fact, builtin } => remember_entry(ProofEntry::Builtin { fact: fact.clone(), builtin: builtin.clone() }, seen, entries),
     }
 }
@@ -137,6 +144,7 @@ fn visit_premise(
     premise: &Triple,
     derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
     explicit_facts: &BTreeSet<Triple>,
+    explicit_sources: &BTreeMap<Triple, SourceRef>,
     base_facts: &[Triple],
     rules: &[Rule],
     seen: &mut HashSet<String>,
@@ -145,7 +153,7 @@ fn visit_premise(
 ) {
     if let Some(candidates) = derived_by_fact.get(premise) {
         if let Some(child) = candidates.iter().find(|candidate| match parent { Some(p) => candidate.fact != p.fact, None => true }) {
-            visit_derived_fact(child, derived_by_fact, explicit_facts, base_facts, rules, seen, entries, None);
+            visit_derived_fact(child, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries, None);
             return;
         }
     }
@@ -156,15 +164,16 @@ fn visit_premise(
     }
 
     if let Some(node) = find_backward_proof_for_goal(premise, base_facts, rules, 64) {
-        visit_proof_node(&node, derived_by_fact, explicit_facts, base_facts, rules, seen, entries);
+        visit_proof_node(&node, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries);
         return;
     }
 
-    if explicit_facts.contains(premise) {
-        remember_entry(ProofEntry::Fact { fact: premise.clone(), source: None }, seen, entries);
+    let source = if explicit_facts.contains(premise) {
+        explicit_sources.get(premise).cloned()
     } else {
-        remember_entry(ProofEntry::Fact { fact: premise.clone(), source: None }, seen, entries);
-    }
+        None
+    };
+    remember_entry(ProofEntry::Fact { fact: premise.clone(), source }, seen, entries);
 }
 
 fn remember_entry(entry: ProofEntry, seen: &mut HashSet<String>, entries: &mut Vec<ProofEntry>) {
@@ -374,6 +383,7 @@ fn collect_prefixes_term(term: &Term, prefixes: &BTreeMap<String, String>, used:
         }
         Term::Literal(lit) => {
             if let Some(dt) = &lit.datatype {
+                if datatype_renders_without_prefix(dt, &lit.value) { return; }
                 if let Some(prefix) = best_prefix_for_iri(dt, prefixes) { used.insert(prefix); }
             }
         }
@@ -385,6 +395,16 @@ fn collect_prefixes_term(term: &Term, prefixes: &BTreeMap<String, String>, used:
         }
         _ => {}
     }
+}
+
+
+fn datatype_renders_without_prefix(datatype: &str, value: &str) -> bool {
+    matches!(
+        datatype,
+        "http://www.w3.org/2001/XMLSchema#integer"
+            | "http://www.w3.org/2001/XMLSchema#decimal"
+            | "http://www.w3.org/2001/XMLSchema#double"
+    ) || (datatype == "http://www.w3.org/2001/XMLSchema#boolean" && matches!(value, "true" | "false"))
 }
 
 fn best_prefix_for_iri(iri: &str, prefixes: &BTreeMap<String, String>) -> Option<String> {

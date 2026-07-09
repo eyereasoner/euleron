@@ -299,6 +299,22 @@ impl Parser {
         Some(SourceRef { label: label.clone(), line: line.max(1) })
     }
 
+    fn add_fact(&mut self, fact: Triple, source: Option<SourceRef>) {
+        if let Some(source) = source {
+            self.doc.fact_sources.entry(fact.clone()).or_insert(source);
+        }
+        self.doc.facts.push(fact);
+    }
+
+    fn add_facts<I>(&mut self, facts: I, source: Option<SourceRef>)
+    where
+        I: IntoIterator<Item = Triple>,
+    {
+        for fact in facts {
+            self.add_fact(fact, source.clone());
+        }
+    }
+
     fn parse_document(mut self) -> Result<Document> {
         if self.profile.is_line_syntax() {
             self.parse_rdf_line_document()?;
@@ -318,8 +334,9 @@ impl Parser {
                 TokenKind::Boolean(true) => self.parse_true_formula_statement()?,
                 TokenKind::Dot => { self.advance(); }
                 _ => {
+                    let source = self.source_ref_at(self.peek().offset);
                     let facts = self.parse_triples_sequence()?;
-                    self.doc.facts.extend(facts);
+                    self.add_facts(facts, source);
                     self.expect_dot()?;
                 }
             }
@@ -328,6 +345,7 @@ impl Parser {
     }
 
     fn parse_rdf12_statement(&mut self) -> Result<()> {
+        let source = self.source_ref_at(self.peek().offset);
         match self.peek_kind() {
             TokenKind::AtPrefix | TokenKind::Prefix => return self.parse_prefix(),
             TokenKind::AtBase | TokenKind::Base => return self.parse_base(),
@@ -335,7 +353,7 @@ impl Parser {
             TokenKind::Dot => { return Err(EyeronError::at("empty RDF statement", self.peek().offset)); }
             TokenKind::LBrace if matches!(self.profile.rdf_format(), Some(RdfFormat::Trig)) => {
                 let triples = self.parse_graph_block()?;
-                self.doc.facts.extend(triples);
+                self.add_facts(triples, source.clone());
                 if self.check(&TokenKind::Dot) { return Err(EyeronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
                 return Ok(());
             }
@@ -348,7 +366,7 @@ impl Parser {
             self.ensure_rdf_graph_label(&graph)?;
             if !generated.is_empty() { return Err(EyeronError::new("graph label cannot generate triples")); }
             let triples = self.parse_graph_block()?;
-            self.doc.facts.push(named_graph_formula(graph, triples));
+            self.add_fact(named_graph_formula(graph, triples), source.clone());
             if self.check(&TokenKind::Dot) { return Err(EyeronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
             return Ok(());
         }
@@ -364,14 +382,14 @@ impl Parser {
             self.ensure_rdf_graph_label(&subject)?;
             if !generated.is_empty() { return Err(EyeronError::new("graph label cannot generate triples")); }
             let triples = self.parse_graph_block()?;
-            self.doc.facts.push(named_graph_formula(subject, triples));
+            self.add_fact(named_graph_formula(subject, triples), source.clone());
             if self.check(&TokenKind::Dot) { return Err(EyeronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
             return Ok(());
         }
 
         self.ensure_rdf_subject(&subject)?;
-        let mut facts = self.parse_triples_sequence_from_subject_with_generated(subject, generated)?;
-        self.doc.facts.append(&mut facts);
+        let facts = self.parse_triples_sequence_from_subject_with_generated(subject, generated)?;
+        self.add_facts(facts, source.clone());
         self.expect_dot()?;
         Ok(())
     }
@@ -386,6 +404,7 @@ impl Parser {
                 _ => {}
             }
 
+            let source = self.source_ref_at(self.peek().offset);
             if self.check(&TokenKind::A) { return Err(EyeronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
             let (subject, mut generated) = self.parse_term()?;
             self.ensure_rdf_line_subject(&subject)?;
@@ -410,11 +429,11 @@ impl Parser {
                 let (graph, graph_generated) = self.parse_term()?;
                 self.ensure_rdf_graph_label(&graph)?;
                 if !graph_generated.is_empty() { return Err(EyeronError::new("graph label cannot generate triples")); }
-                self.doc.facts.push(named_graph_formula(graph, generated));
+                self.add_fact(named_graph_formula(graph, generated), source.clone());
             } else if matches!(self.profile.rdf_format(), Some(RdfFormat::NTriples)) && !self.check(&TokenKind::Dot) {
                 return Err(EyeronError::at("N-Triples has too many terms before '.'", self.peek().offset));
             } else {
-                self.doc.facts.extend(generated);
+                self.add_facts(generated, source.clone());
             }
             self.expect_dot()?;
         }
@@ -536,7 +555,7 @@ impl Parser {
             _ => {
                 // `true false true .` is a valid N3 triple with boolean terms.
                 let facts = self.parse_triples_sequence_from_subject(boolean_literal(true))?;
-                self.doc.facts.extend(facts);
+                self.add_facts(facts, source.clone());
             }
         }
         self.expect_dot()?;
@@ -596,7 +615,7 @@ impl Parser {
                             }
                             break;
                         }
-                        self.doc.facts.extend(triples);
+                        self.add_facts(triples, source.clone());
                     }
                 }
             }

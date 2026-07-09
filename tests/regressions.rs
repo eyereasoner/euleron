@@ -1,4 +1,4 @@
-use eyeron::{is_rdf_message_log, parse_n3, parse_rdf12, parse_rdf_message_log, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
+use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, proof_to_n3, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
 
 fn check_golden_non_prefix_lines(name: &str, source: &str, golden: &str) -> std::result::Result<(), String> {
     let out = reason(source).map_err(|err| format!("{} failed: {}", name, err))?;
@@ -104,6 +104,70 @@ fn rdf12_parenthesized_triple_terms_remain_terms() {
     let doc = parse_rdf12(input, Some("http://example.org/base"), RdfFormat::Turtle).unwrap();
     assert!(doc.facts.iter().any(|t| matches!(&t.o, eyeron::Term::Formula(inner) if inner.len() == 1)), "{:#?}", doc.facts);
 }
+
+
+#[test]
+fn proof_goldens_are_valid_n3_documents() {
+    use std::fs;
+    use std::path::Path;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let proof_dir = root.join("examples").join("proof");
+    assert!(proof_dir.exists(), "examples/proof directory is missing");
+
+    let mut files = fs::read_dir(&proof_dir)
+        .expect("read examples/proof directory")
+        .map(|entry| entry.expect("read examples/proof entry").path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("n3"))
+        .collect::<Vec<_>>();
+    files.sort();
+    assert!(!files.is_empty(), "no proof goldens found in examples/proof");
+
+    for path in files {
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {}", path.display(), err));
+        parse_n3(&source, None)
+            .unwrap_or_else(|err| panic!("proof golden {} is not parseable N3: {}", path.display(), err));
+    }
+}
+
+#[test]
+fn selected_proof_examples_match_eyeling_style_goldens() {
+    use std::fs;
+    use std::path::Path;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let cases = ["backward", "socrates"];
+
+    for name in cases {
+        let source_path = root.join("examples").join(format!("{name}.n3"));
+        let golden_path = root.join("examples").join("proof").join(format!("{name}.n3"));
+        let source = fs::read_to_string(&source_path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {}", source_path.display(), err));
+        let golden = fs::read_to_string(&golden_path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {}", golden_path.display(), err));
+        let label = source_path.to_string_lossy();
+        let doc = parse_n3_with_source(&source, None, Some(label.as_ref()))
+            .unwrap_or_else(|err| panic!("failed to parse {}: {}", source_path.display(), err));
+        let result = reason_document(&doc, &ReasonerOptions { proof: true, ..ReasonerOptions::default() });
+        let out = proof_to_n3(&doc.prefixes, &result);
+
+        assert_eq!(
+            normalize_proof_golden(&golden),
+            normalize_proof_golden(&out),
+            "proof example {name} did not match {}
+actual:
+{}",
+            golden_path.display(),
+            out
+        );
+    }
+}
+
+fn normalize_proof_golden(text: &str) -> String {
+    text.replace("\r\n", "\n").trim().to_string()
+}
+
 
 #[test]
 fn witch_derives_girl_as_witch() {

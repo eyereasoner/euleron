@@ -121,7 +121,7 @@ Proof output can be enabled with `-p`/`--proof`:
 cargo run -- --proof examples/socrates.n3
 ```
 
-In proof mode Eyeron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`.
+In proof mode Eyeron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`. Eyeling-style proof goldens are bundled under `examples/proof/`.
 
 ## Library use
 
@@ -213,6 +213,7 @@ The test suite includes:
 - parser and built-in unit tests;
 - focused regression tests for backward rules, generated rules, quoted formulas, list handling, and blank nodes;
 - a packaged example/golden-output sweep over the examples in `examples/` and `examples/output/`;
+- proof-output goldens under `examples/proof/` for `cargo test --release`;
 - the bundled Notation3 conformance suite from `tests/notation3tests`, checked by `tests/notation3_conformance.rs`.
 
 During the golden and conformance sweeps, progress and elapsed time are printed so long-running cases are visible:
@@ -326,6 +327,7 @@ src/
   main.rs       CLI entry point
 examples/       Example N3 inputs
 examples/output Golden outputs used by cargo test
+examples/proof  Eyeling-style proof-output goldens
 tests/          Integration and golden-sweep tests
   notation3tests/ Bundled Notation3 conformance data
   w3c_rdf/        Rust W3C RDF 1.x manifest sweep

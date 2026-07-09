@@ -188,18 +188,20 @@ pub struct Document {
     pub prefixes: BTreeMap<String, String>,
     pub base_iri: Option<String>,
     pub facts: Vec<Triple>,
+    pub fact_sources: BTreeMap<Triple, SourceRef>,
     pub rules: Vec<Rule>,
 }
 
 impl Document {
     pub fn new() -> Self {
-        Self { prefixes: default_prefixes(), base_iri: None, facts: Vec::new(), rules: Vec::new() }
+        Self { prefixes: default_prefixes(), base_iri: None, facts: Vec::new(), fact_sources: BTreeMap::new(), rules: Vec::new() }
     }
 
     pub fn merge(&mut self, other: Document) {
         for (k, v) in other.prefixes { self.prefixes.insert(k, v); }
         if self.base_iri.is_none() { self.base_iri = other.base_iri; }
         self.facts.extend(other.facts);
+        self.fact_sources.extend(other.fact_sources);
         self.rules.extend(other.rules);
     }
 }
