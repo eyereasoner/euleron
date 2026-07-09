@@ -1,5 +1,7 @@
 # Eyeron
 
+Eyeron is like a calculator for facts. You give it things you know and rules to follow; it figures out what else must be true, and when you ask why, it shows the steps. That makes your data easier to check, share, and build on.
+
 Eyeron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`. The native integration target for structured RDF exchange is RDF Messages.
 
 Eyeron is the Rust reasoner in the Eyereasoner family. **Eyeling** remains the sibling project; this package intentionally uses the `eyeron` crate name and `eyeron` executable name to keep the projects distinct.
