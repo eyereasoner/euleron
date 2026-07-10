@@ -187,6 +187,22 @@ fn normalize_proof_golden(text: &str) -> String {
     text.replace("\r\n", "\n").trim().to_string()
 }
 
+
+#[test]
+fn playground_html_is_packaged_for_browser_wasm() {
+    use std::fs;
+    use std::path::Path;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let playground = root.join("playground.html");
+    let html = fs::read_to_string(&playground)
+        .unwrap_or_else(|err| panic!("failed to read {}: {}", playground.display(), err));
+
+    assert!(html.contains("The Eyeron N3 Playground"), "{}", playground.display());
+    assert!(html.contains("./pkg/eyeron.js"), "playground should load the wasm-pack web bundle");
+    assert!(html.contains("reasonWithData"), "playground should expose separate data + N3 program reasoning");
+}
+
 #[test]
 fn log_skolem_is_stable_by_default() {
     let source = r#"
