@@ -24,7 +24,7 @@
 }.
 
 {
-  ?SCOPE log:notIncludes { :a :b :c }.
+  { :x :y 1 } log:notIncludes { :a :b :c }.
 }
 =>
 {

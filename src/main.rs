@@ -19,6 +19,10 @@ struct CliOptions {
     stream: bool,
     stream_messages: bool,
     base_iri: Option<String>,
+    max_iterations: Option<usize>,
+    max_match_steps: Option<usize>,
+    max_backward_depth: Option<usize>,
+    max_backward_solutions_per_goal: Option<usize>,
     files: Vec<String>,
 }
 
@@ -63,8 +67,17 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let reasoner_options = ReasonerOptions { proof: opt.proof, ..ReasonerOptions::default() };
+    let mut reasoner_options = ReasonerOptions { proof: opt.proof, ..ReasonerOptions::default() };
+    if let Some(value) = opt.max_iterations { reasoner_options.max_iterations = value; }
+    if let Some(value) = opt.max_match_steps { reasoner_options.max_match_steps = value; }
+    if let Some(value) = opt.max_backward_depth { reasoner_options.max_backward_depth = value; }
+    if let Some(value) = opt.max_backward_solutions_per_goal {
+        reasoner_options.max_backward_solutions_per_goal = value;
+    }
     let result = reason(&merged, &reasoner_options);
+    if let Some(summary) = result.incomplete_summary() {
+        return Err(EyeronError::new(summary));
+    }
     if opt.proof {
         print!("{}", proof_to_n3(&merged.prefixes, &result));
     } else if opt.rdf {
@@ -104,6 +117,18 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 if i >= args.len() { return Err(EyeronError::new(format!("{} requires a value", args[i - 1]))); }
                 opt.base_iri = Some(args[i].clone());
             }
+            "--max-iterations" => {
+                opt.max_iterations = Some(parse_usize_option(&args, &mut i)?);
+            }
+            "--max-match-steps" => {
+                opt.max_match_steps = Some(parse_usize_option(&args, &mut i)?);
+            }
+            "--max-backward-depth" => {
+                opt.max_backward_depth = Some(parse_usize_option(&args, &mut i)?);
+            }
+            "--max-backward-solutions" => {
+                opt.max_backward_solutions_per_goal = Some(parse_usize_option(&args, &mut i)?);
+            }
             "--store-clear" | "--enforce-https" => {
                 eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Eyeron", args[i]);
             }
@@ -115,6 +140,17 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
         i += 1;
     }
     Ok(opt)
+}
+
+fn parse_usize_option(args: &[String], index: &mut usize) -> Result<usize> {
+    let flag = args[*index].clone();
+    *index += 1;
+    let Some(value) = args.get(*index) else {
+        return Err(EyeronError::new(format!("{} requires a non-negative integer", flag)));
+    };
+    value
+        .parse::<usize>()
+        .map_err(|_| EyeronError::new(format!("{} requires a non-negative integer, got {}", flag, value)))
 }
 
 fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat>> {
@@ -188,6 +224,10 @@ fn print_help() {
     println!("  -s, --stream                  Output is emitted after fixpoint");
     println!("      --stream-messages         RDF Message Log input with VERSION/MESSAGE delimiters");
     println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");
+    println!("      --max-iterations N        Maximum outer fixpoint iterations");
+    println!("      --max-match-steps N       Maximum matcher steps per premise search");
+    println!("      --max-backward-depth N    Maximum backward-rule recursion depth");
+    println!("      --max-backward-solutions N  Maximum substitutions retained per backward goal");
     println!("  -v, --version                 Print version");
     println!("  -h, --help                    Show this help");
 }

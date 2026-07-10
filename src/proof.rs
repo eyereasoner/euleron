@@ -77,6 +77,7 @@ enum ProofEntry {
     Rule(DerivedFact),
     Fact { fact: Triple, source: Option<SourceRef> },
     Builtin { fact: Triple, builtin: Term },
+    Unproven { fact: Triple, reason: String },
 }
 
 fn collect_proof_entries(
@@ -136,6 +137,9 @@ impl ProofCollector<'_> {
             ProofNode::Builtin { fact, builtin } => {
                 self.remember_entry(ProofEntry::Builtin { fact: fact.clone(), builtin: builtin.clone() });
             }
+            ProofNode::Unproven { fact, reason } => {
+                self.remember_entry(ProofEntry::Unproven { fact: fact.clone(), reason: reason.clone() });
+            }
         }
     }
 
@@ -147,22 +151,25 @@ impl ProofCollector<'_> {
             }
         }
 
-        if is_builtin_premise(premise) {
-            self.remember_entry(ProofEntry::Builtin { fact: premise.clone(), builtin: premise.p.clone() });
-            return;
-        }
-
         if let Some(node) = find_backward_proof_for_goal(premise, self.base_facts, self.rules, 64) {
             self.visit_proof_node(&node);
             return;
         }
 
-        let source = if self.explicit_facts.contains(premise) {
-            self.explicit_sources.get(premise).cloned()
-        } else {
-            None
-        };
-        self.remember_entry(ProofEntry::Fact { fact: premise.clone(), source });
+        if self.explicit_facts.contains(premise) {
+            let source = self.explicit_sources.get(premise).cloned();
+            self.remember_entry(ProofEntry::Fact { fact: premise.clone(), source });
+            return;
+        }
+
+        self.remember_entry(ProofEntry::Unproven {
+            fact: premise.clone(),
+            reason: if is_builtin_premise(premise) {
+                "builtin evaluation did not verify this premise".to_string()
+            } else {
+                "no explicit fact, verified builtin, or backward proof was found".to_string()
+            },
+        });
     }
 
     fn remember_entry(&mut self, entry: ProofEntry) {
@@ -170,6 +177,7 @@ impl ProofCollector<'_> {
             ProofEntry::Rule(df) => format!("rule:{}:{}", triple_key(&df.fact), source_key(df.rule.source.as_ref())),
             ProofEntry::Fact { fact, source } => format!("fact:{}:{}", triple_key(fact), source_key(source.as_ref())),
             ProofEntry::Builtin { fact, .. } => format!("builtin:{}", triple_key(fact)),
+            ProofEntry::Unproven { fact, .. } => format!("unproven:{}", triple_key(fact)),
         };
         if self.seen.insert(key) { self.entries.push(entry); }
     }
@@ -198,6 +206,13 @@ fn render_entry(entry: &ProofEntry, prefixes: &BTreeMap<String, String>) -> Stri
         }
         ProofEntry::Builtin { fact, builtin } => {
             format!("  {}\n    pe:by [ pe:builtin {} ].", graph_for_triple(fact, prefixes), term_to_n3_object(builtin, prefixes))
+        }
+        ProofEntry::Unproven { fact, reason } => {
+            format!(
+                "  {}\n    pe:by [ pe:unproven {} ].",
+                graph_for_triple(fact, prefixes),
+                quoted_string(reason),
+            )
         }
     }
 }
@@ -354,6 +369,7 @@ fn used_prefixes_for_proof(prefixes: &BTreeMap<String, String>, roots: &[(Derive
                     collect_prefixes_triple(fact, prefixes, &mut used);
                     collect_prefixes_term(builtin, prefixes, &mut used);
                 }
+                ProofEntry::Unproven { fact, .. } => collect_prefixes_triple(fact, prefixes, &mut used),
             }
         }
     }

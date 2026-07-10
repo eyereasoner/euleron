@@ -21,7 +21,10 @@ pub use parser::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf_m
 pub use rdf_compat::{parse_rdf12, RdfFormat};
 pub use printing::{document_debug, rdf12_json, rdf_result_to_string, result_to_string, triples_to_n3, triples_to_trig};
 pub use proof::proof_to_n3;
-pub use reasoner::{reason as reason_document, ReasonerOptions, ReasonerResult};
+pub use reasoner::{
+    reason as reason_document, CompletionStatus, ReasonerError, ReasonerLimit, ReasonerOptions,
+    ReasonerResult, ReasonerStatistics,
+};
 
 /// Parse an N3 string, run the forward reasoner, and return the N3 output for
 /// newly-derived triples.
@@ -32,6 +35,9 @@ pub fn reason(input: &str) -> Result<String> {
         parse_n3(input, None)?
     };
     let result = reason_document(&doc, &ReasonerOptions::default());
+    if let Some(summary) = result.incomplete_summary() {
+        return Err(EyeronError::new(summary));
+    }
     Ok(result_to_string(&doc.prefixes, &result.derived))
 }
 

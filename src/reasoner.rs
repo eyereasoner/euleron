@@ -4,28 +4,139 @@
 
 use crate::ast::*;
 use crate::parser::parse_n3;
-use std::collections::{BTreeMap, HashMap, HashSet};
+use regex::Regex;
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 
 pub type Bindings = BTreeMap<String, Term>;
 
-const MAX_BACKWARD_DEPTH: usize = 32;
-const MAX_BACKWARD_SOLUTIONS_PER_GOAL: usize = 1024;
-const MAX_MATCH_STEPS: usize = 200_000;
+const DEFAULT_MAX_BACKWARD_DEPTH: usize = 32;
+const DEFAULT_MAX_BACKWARD_SOLUTIONS_PER_GOAL: usize = 1024;
+const DEFAULT_MAX_MATCH_STEPS: usize = 200_000;
 // Multi-premise agenda matching is a win for small state-machine examples,
 // but on generated rule sets such as deep-taxonomy-100000 it makes every
 // broad subject/predicate fact probe unrelated multi-premise checks.  Keep
 // the original single-premise hot path for large programs.
 const MULTI_PREMISE_AGENDA_RULE_LIMIT: usize = 2048;
 
-#[derive(Debug, Default)]
+#[derive(Debug, Clone)]
 struct SearchBudget {
     steps: usize,
+    nested_match_steps: usize,
+    max_iterations: usize,
+    max_steps: usize,
+    max_backward_depth: usize,
+    max_backward_solutions_per_goal: usize,
+    limits_reached: BTreeSet<ReasonerLimit>,
+    errors: Vec<ReasonerError>,
+    error_seen: HashSet<ReasonerError>,
 }
 
 impl SearchBudget {
+    fn new(options: &ReasonerOptions) -> Self {
+        Self {
+            steps: 0,
+            nested_match_steps: 0,
+            max_iterations: options.max_iterations,
+            max_steps: options.max_match_steps,
+            max_backward_depth: options.max_backward_depth,
+            max_backward_solutions_per_goal: options.max_backward_solutions_per_goal,
+            limits_reached: BTreeSet::new(),
+            errors: Vec::new(),
+            error_seen: HashSet::new(),
+        }
+    }
+
+    fn for_proof(max_depth: usize) -> Self {
+        Self {
+            steps: 0,
+            nested_match_steps: 0,
+            max_iterations: ReasonerOptions::default().max_iterations,
+            max_steps: DEFAULT_MAX_MATCH_STEPS,
+            max_backward_depth: max_depth,
+            max_backward_solutions_per_goal: DEFAULT_MAX_BACKWARD_SOLUTIONS_PER_GOAL,
+            limits_reached: BTreeSet::new(),
+            errors: Vec::new(),
+            error_seen: HashSet::new(),
+        }
+    }
+
     fn tick(&mut self) -> bool {
+        if self.steps >= self.max_steps {
+            self.hit_limit(ReasonerLimit::MatchSteps);
+            return false;
+        }
         self.steps += 1;
-        self.steps <= MAX_MATCH_STEPS
+        true
+    }
+
+    fn hit_limit(&mut self, limit: ReasonerLimit) {
+        self.limits_reached.insert(limit);
+    }
+
+    fn unsupported_builtin(&mut self, premise: &Triple, detail: impl Into<String>) {
+        let builtin = match &premise.p {
+            Term::Iri(iri) => iri.clone(),
+            other => format!("{:?}", other),
+        };
+        let error = ReasonerError::UnsupportedBuiltin {
+            builtin,
+            premise: premise.clone(),
+            detail: detail.into(),
+        };
+        if self.error_seen.insert(error.clone()) {
+            self.errors.push(error);
+        }
+    }
+
+
+    fn nested_options(&self) -> ReasonerOptions {
+        ReasonerOptions {
+            max_iterations: self.max_iterations,
+            max_match_steps: self.max_steps,
+            max_backward_depth: self.max_backward_depth,
+            max_backward_solutions_per_goal: self.max_backward_solutions_per_goal,
+            trace: false,
+            proof: false,
+        }
+    }
+
+    fn absorb_result(&mut self, result: &ReasonerResult) {
+        self.limits_reached.extend(result.limits_reached.iter().copied());
+        for error in &result.errors {
+            if self.error_seen.insert(error.clone()) {
+                self.errors.push(error.clone());
+            }
+        }
+        self.nested_match_steps = self
+            .nested_match_steps
+            .saturating_add(result.statistics.match_steps);
+    }
+}
+
+#[derive(Debug, Default)]
+struct RunReport {
+    limits_reached: BTreeSet<ReasonerLimit>,
+    errors: Vec<ReasonerError>,
+    error_seen: HashSet<ReasonerError>,
+    match_steps: usize,
+}
+
+impl RunReport {
+    fn absorb(&mut self, budget: SearchBudget) {
+        self.match_steps = self
+            .match_steps
+            .saturating_add(budget.steps)
+            .saturating_add(budget.nested_match_steps);
+        self.limits_reached.extend(budget.limits_reached);
+        for error in budget.errors {
+            if self.error_seen.insert(error.clone()) {
+                self.errors.push(error);
+            }
+        }
+    }
+
+    fn hit_limit(&mut self, limit: ReasonerLimit) {
+        self.limits_reached.insert(limit);
     }
 }
 
@@ -191,25 +302,134 @@ impl AgendaIndex {
 }
 
 
+/// A safety limit that prevented the reasoner from proving a complete fixpoint.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub enum ReasonerLimit {
+    Iterations,
+    MatchSteps,
+    BackwardDepth,
+    BackwardSolutionsPerGoal,
+}
+
+impl std::fmt::Display for ReasonerLimit {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let label = match self {
+            Self::Iterations => "iteration limit",
+            Self::MatchSteps => "match-step limit",
+            Self::BackwardDepth => "backward-depth limit",
+            Self::BackwardSolutionsPerGoal => "backward-solution limit",
+        };
+        write!(f, "{}", label)
+    }
+}
+
+/// A structured semantic error encountered while evaluating a rule premise.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum ReasonerError {
+    UnsupportedBuiltin {
+        builtin: String,
+        premise: Triple,
+        detail: String,
+    },
+}
+
+impl std::fmt::Display for ReasonerError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::UnsupportedBuiltin { builtin, detail, .. } => {
+                write!(f, "unsupported builtin {}: {}", builtin, detail)
+            }
+        }
+    }
+}
+
+impl std::error::Error for ReasonerError {}
+
+/// Whether the returned closure is known to be complete.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CompletionStatus {
+    Complete,
+    Incomplete,
+}
+
+/// Counters collected during one reasoning run.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct ReasonerStatistics {
+    /// Number of outer fixpoint iterations attempted.
+    pub iterations: usize,
+    /// Total matcher steps across forward, query, and nested searches.
+    pub match_steps: usize,
+}
+
+/// Safety limits and output options for a reasoning run.
 #[derive(Debug, Clone)]
 pub struct ReasonerOptions {
+    /// Maximum number of outer fixpoint iterations.
     pub max_iterations: usize,
+    /// Maximum matcher steps in each individual premise search.
+    pub max_match_steps: usize,
+    /// Maximum recursive backward-rule depth.
+    pub max_backward_depth: usize,
+    /// Maximum substitutions retained for one backward goal.
+    pub max_backward_solutions_per_goal: usize,
     pub trace: bool,
     pub proof: bool,
 }
 
 impl Default for ReasonerOptions {
-    fn default() -> Self { Self { max_iterations: 10_000, trace: false, proof: false } }
+    fn default() -> Self {
+        Self {
+            max_iterations: 10_000,
+            max_match_steps: DEFAULT_MAX_MATCH_STEPS,
+            max_backward_depth: DEFAULT_MAX_BACKWARD_DEPTH,
+            max_backward_solutions_per_goal: DEFAULT_MAX_BACKWARD_SOLUTIONS_PER_GOAL,
+            trace: false,
+            proof: false,
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
 pub struct ReasonerResult {
+    pub status: CompletionStatus,
+    pub limits_reached: Vec<ReasonerLimit>,
+    pub errors: Vec<ReasonerError>,
+    pub statistics: ReasonerStatistics,
     pub explicit: Vec<Triple>,
     pub explicit_sources: BTreeMap<Triple, SourceRef>,
     pub derived: Vec<Triple>,
     pub closure: Vec<Triple>,
     pub proofs: Vec<DerivedFact>,
     pub rules: Vec<Rule>,
+}
+
+impl ReasonerResult {
+    pub fn is_complete(&self) -> bool {
+        self.status == CompletionStatus::Complete
+    }
+
+    pub fn incomplete_summary(&self) -> Option<String> {
+        if self.is_complete() { return None; }
+
+        let mut parts = Vec::new();
+        if !self.limits_reached.is_empty() {
+            parts.push(format!(
+                "limits reached: {}",
+                self.limits_reached.iter().map(ToString::to_string).collect::<Vec<_>>().join(", "),
+            ));
+        }
+        if !self.errors.is_empty() {
+            parts.push(format!(
+                "errors: {}",
+                self.errors.iter().map(ToString::to_string).collect::<Vec<_>>().join("; "),
+            ));
+        }
+        if parts.is_empty() {
+            Some("reasoning incomplete".to_string())
+        } else {
+            Some(format!("reasoning incomplete ({})", parts.join("; ")))
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -225,6 +445,7 @@ pub enum ProofNode {
     Rule { df: DerivedFact, children: Vec<ProofNode> },
     Fact { fact: Triple, source: Option<SourceRef> },
     Builtin { fact: Triple, builtin: Term },
+    Unproven { fact: Triple, reason: String },
 }
 
 pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
@@ -254,10 +475,14 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
     let mut derived = Vec::<Triple>::new();
     let mut proofs = Vec::<DerivedFact>::new();
     let mut iteration = 0usize;
+    let mut report = RunReport::default();
 
     loop {
+        if iteration >= options.max_iterations {
+            report.hit_limit(ReasonerLimit::Iterations);
+            break;
+        }
         iteration += 1;
-        if iteration > options.max_iterations { break; }
 
         let before = seen.len();
 
@@ -315,7 +540,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
                 rest.remove(premise_index);
                 let mut rule_bindings = Vec::<Bindings>::new();
                 let mut backward_stack = HashSet::<String>::new();
-                let mut budget = SearchBudget::default();
+                let mut budget = SearchBudget::new(options);
                 match_premise_remaining(
                     rest,
                     &closure,
@@ -327,6 +552,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
                     &mut budget,
                     &mut rule_bindings,
                 );
+                report.absorb(budget);
 
                 let mut pending_rules = Vec::<Rule>::new();
                 for bindings in rule_bindings {
@@ -369,7 +595,14 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
             let rule = active_rules[idx].clone();
             if !rule.is_forward { continue; }
 
-            let matches = match_premises(&rule.premise, &closure, Some(&fact_index), &active_rules);
+            let matches = match_premises(
+                &rule.premise,
+                &closure,
+                Some(&fact_index),
+                &active_rules,
+                options,
+                &mut report,
+            );
             for bindings in matches {
                 emit_conclusions(
                     &rule,
@@ -400,10 +633,34 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
     }
 
     if !query_rules.is_empty() {
-        derived = evaluate_query_rules(&query_rules, &closure, Some(&fact_index), &active_rules);
+        derived = evaluate_query_rules(
+            &query_rules,
+            &closure,
+            Some(&fact_index),
+            &active_rules,
+            options,
+            &mut report,
+        );
     }
 
-    ReasonerResult { explicit: doc.facts.clone(), explicit_sources: doc.fact_sources.clone(), derived, closure, proofs, rules: active_rules }
+    let limits_reached = report.limits_reached.into_iter().collect::<Vec<_>>();
+    let status = if limits_reached.is_empty() && report.errors.is_empty() {
+        CompletionStatus::Complete
+    } else {
+        CompletionStatus::Incomplete
+    };
+    ReasonerResult {
+        status,
+        limits_reached,
+        errors: report.errors,
+        statistics: ReasonerStatistics { iterations: iteration, match_steps: report.match_steps },
+        explicit: doc.facts.clone(),
+        explicit_sources: doc.fact_sources.clone(),
+        derived,
+        closure,
+        proofs,
+        rules: active_rules,
+    }
 }
 
 fn evaluate_query_rules(
@@ -411,12 +668,14 @@ fn evaluate_query_rules(
     closure: &[Triple],
     fact_index: Option<&FactIndex>,
     rules: &[Rule],
+    options: &ReasonerOptions,
+    report: &mut RunReport,
 ) -> Vec<Triple> {
     let mut out = Vec::<Triple>::new();
     let mut seen = HashSet::<Triple>::new();
 
     for rule in query_rules {
-        let matches = match_premises(&rule.premise, closure, fact_index, rules);
+        let matches = match_premises(&rule.premise, closure, fact_index, rules, options, report);
         for bindings in matches {
             let mut blank_map = BTreeMap::<String, Term>::new();
             for head in &rule.conclusion {
@@ -661,6 +920,33 @@ fn is_builtin_iri(iri: &str) -> bool {
         | MATH_SUM | MATH_DIFFERENCE
     ) || is_list_builtin(iri) || is_math_operator(iri) || is_math_comparison(iri)
         || is_string_builtin(iri) || is_time_builtin(iri)
+        || is_unsupported_builtin_iri(iri)
+}
+
+fn is_unsupported_builtin_iri(iri: &str) -> bool {
+    let in_builtin_namespace = iri.starts_with("http://www.w3.org/2000/10/swap/log#")
+        || iri.starts_with("http://www.w3.org/2000/10/swap/math#")
+        || iri.starts_with("http://www.w3.org/2000/10/swap/list#")
+        || iri.starts_with("http://www.w3.org/2000/10/swap/string#")
+        || iri.starts_with("http://www.w3.org/2000/10/swap/time#")
+        || iri.starts_with("http://www.w3.org/2000/10/swap/crypto#");
+    in_builtin_namespace
+        // These log vocabulary terms are structural RDF predicates handled by
+        // the parser/reasoner as ordinary facts, not executable built-ins.
+        && !matches!(iri, LOG_IMPLIES | LOG_IMPLIED_BY | LOG_QUERY | LOG_OUTPUT_STRING | LOG_NAME_OF)
+        && !matches!(iri,
+            LOG_EQUAL_TO | LOG_NOT_EQUAL_TO | LOG_COLLECT_ALL_IN | LOG_FOR_ALL_IN
+            | LOG_CONCLUSION | LOG_CONJUNCTION | LOG_INCLUDES | LOG_NOT_INCLUDES | LOG_URI
+            | LOG_RAW_TYPE | LOG_DTLIT | LOG_LANGLIT | LOG_CONTENT | LOG_SEMANTICS
+            | LOG_SEMANTICS_OR_ERROR | LOG_PARSED_AS_N3 | LOG_SKOLEM | CRYPTO_SHA
+            | LIST_FIRST | LIST_REST | LIST_APPEND | LIST_ITERATE | LIST_MAP | LIST_FIRST_REST
+            | LIST_REVERSE | LIST_SORT | LIST_NOT_MEMBER | MATH_SUM | MATH_DIFFERENCE
+        )
+        && !is_list_builtin(iri)
+        && !is_math_operator(iri)
+        && !is_math_comparison(iri)
+        && !is_string_builtin(iri)
+        && !is_time_builtin(iri)
 }
 
 fn is_agenda_safe_builtin_iri(iri: &str) -> bool {
@@ -724,11 +1010,29 @@ fn rule_from_triple(t: &Triple) -> Option<Rule> {
     }
 }
 
-fn match_premises(premises: &[Triple], facts: &[Triple], fact_index: Option<&FactIndex>, rules: &[Rule]) -> Vec<Bindings> {
+fn match_premises(
+    premises: &[Triple],
+    facts: &[Triple],
+    fact_index: Option<&FactIndex>,
+    rules: &[Rule],
+    options: &ReasonerOptions,
+    report: &mut RunReport,
+) -> Vec<Bindings> {
     let mut out = Vec::new();
     let mut backward_stack = HashSet::<String>::new();
-    let mut budget = SearchBudget::default();
-    match_premise_remaining(premises.to_vec(), facts, fact_index, rules, BTreeMap::new(), 0, &mut backward_stack, &mut budget, &mut out);
+    let mut budget = SearchBudget::new(options);
+    match_premise_remaining(
+        premises.to_vec(),
+        facts,
+        fact_index,
+        rules,
+        BTreeMap::new(),
+        0,
+        &mut backward_stack,
+        &mut budget,
+        &mut out,
+    );
+    report.absorb(budget);
     out
 }
 
@@ -1170,7 +1474,10 @@ fn solve_backward_goal(
     backward_stack: &mut HashSet<String>,
     budget: &mut SearchBudget,
 ) -> Vec<Bindings> {
-    if depth >= MAX_BACKWARD_DEPTH { return Vec::new(); }
+    if depth >= budget.max_backward_depth {
+        budget.hit_limit(ReasonerLimit::BackwardDepth);
+        return Vec::new();
+    }
 
     let goal = resolve_triple(goal, bindings);
     let stack_key = backward_goal_key(&goal);
@@ -1189,19 +1496,22 @@ fn solve_backward_goal(
                 let mut body_matches = Vec::new();
                 match_premise_at(&renamed.premise, facts, fact_index, rules, 0, b, depth + 1, backward_stack, budget, &mut body_matches);
                 out.extend(body_matches.into_iter().map(|m| canonicalize_bindings(&m)));
-                if out.len() >= MAX_BACKWARD_SOLUTIONS_PER_GOAL {
+                if out.len() >= budget.max_backward_solutions_per_goal {
+                    out.truncate(budget.max_backward_solutions_per_goal);
+                    budget.hit_limit(ReasonerLimit::BackwardSolutionsPerGoal);
                     break;
                 }
             }
         }
-        if out.len() >= MAX_BACKWARD_SOLUTIONS_PER_GOAL {
+        if out.len() >= budget.max_backward_solutions_per_goal {
+            budget.hit_limit(ReasonerLimit::BackwardSolutionsPerGoal);
             break;
         }
     }
     backward_stack.remove(&stack_key);
     out
 }
- 
+
 
 pub fn find_backward_proof_for_goal(goal: &Triple, facts: &[Triple], rules: &[Rule], max_depth: usize) -> Option<ProofNode> {
     let mut fact_index = FactIndex::default();
@@ -1209,7 +1519,7 @@ pub fn find_backward_proof_for_goal(goal: &Triple, facts: &[Triple], rules: &[Ru
         fact_index.insert(idx, fact);
     }
     let mut visited = HashSet::<String>::new();
-    let mut budget = SearchBudget::default();
+    let mut budget = SearchBudget::for_proof(max_depth);
     find_backward_proof_inner(goal, facts, &fact_index, rules, 0, max_depth, &mut visited, &mut budget)
 }
 
@@ -1223,7 +1533,11 @@ fn find_backward_proof_inner(
     visited: &mut HashSet<String>,
     budget: &mut SearchBudget,
 ) -> Option<ProofNode> {
-    if depth > max_depth || !budget.tick() { return None; }
+    if depth > max_depth {
+        budget.hit_limit(ReasonerLimit::BackwardDepth);
+        return None;
+    }
+    if !budget.tick() { return None; }
 
     let empty = BTreeMap::new();
     for fact in fact_index.candidates(facts, goal, &empty) {
@@ -1234,7 +1548,19 @@ fn find_backward_proof_inner(
     }
 
     if is_builtin_premise(goal) {
-        return Some(ProofNode::Builtin { fact: goal.clone(), builtin: goal.p.clone() });
+        let mut backward_stack = HashSet::new();
+        let verified = eval_builtin(
+            goal,
+            &empty,
+            facts,
+            Some(fact_index),
+            rules,
+            depth,
+            &mut backward_stack,
+            budget,
+        )
+        .is_some_and(|matches| !matches.is_empty());
+        return verified.then(|| ProofNode::Builtin { fact: goal.clone(), builtin: goal.p.clone() });
     }
 
     let Term::Iri(goal_pred) = &goal.p else { return None; };
@@ -1278,12 +1604,11 @@ fn find_backward_proof_inner(
         let children = premises
             .iter()
             .map(|prem| {
-                if is_builtin_premise(prem) {
-                    ProofNode::Builtin { fact: prem.clone(), builtin: prem.p.clone() }
-                } else {
-                    find_backward_proof_inner(prem, facts, fact_index, rules, depth + 1, max_depth, visited, budget)
-                        .unwrap_or_else(|| ProofNode::Fact { fact: prem.clone(), source: None })
-                }
+                find_backward_proof_inner(prem, facts, fact_index, rules, depth + 1, max_depth, visited, budget)
+                    .unwrap_or_else(|| ProofNode::Unproven {
+                        fact: prem.clone(),
+                        reason: "no explicit fact, verified builtin, or backward proof was found".to_string(),
+                    })
             })
             .collect();
         out = Some(ProofNode::Rule { df, children });
@@ -1464,17 +1789,21 @@ fn eval_builtin(
         Term::Iri(ref iri) if iri == LOG_NOT_EQUAL_TO => Some(eval_not_equal(&premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if iri == LOG_COLLECT_ALL_IN => Some(eval_collect_all_in(&premise.s, &premise.o, bindings, facts, fact_index, rules, depth, backward_stack, budget)),
         Term::Iri(ref iri) if iri == LOG_FOR_ALL_IN => Some(eval_for_all_in(&premise.s, &premise.o, bindings, facts, fact_index, rules, depth, backward_stack, budget)),
-        Term::Iri(ref iri) if iri == LOG_CONCLUSION => Some(eval_log_conclusion(&premise.s, &premise.o, bindings)),
+        Term::Iri(ref iri) if iri == LOG_CONCLUSION => Some(eval_log_conclusion(&premise.s, &premise.o, bindings, budget)),
         Term::Iri(ref iri) if iri == LOG_CONJUNCTION => Some(eval_log_conjunction(&premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if iri == LOG_INCLUDES => Some(eval_log_includes(&premise.s, &premise.o, bindings, facts, rules)),
-        Term::Iri(ref iri) if iri == LOG_NOT_INCLUDES => Some(eval_log_not_includes(&premise.s, &premise.o, bindings)),
+        Term::Iri(ref iri) if iri == LOG_NOT_INCLUDES => Some(eval_log_not_includes(premise, bindings, budget)),
         Term::Iri(ref iri) if iri == LOG_URI => Some(eval_log_uri(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_RAW_TYPE => Some(eval_log_raw_type(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_DTLIT => Some(eval_log_dtlit(&premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if iri == LOG_LANGLIT => Some(eval_log_langlit(&premise.s, &premise.o, bindings, facts)),
-        Term::Iri(ref iri) if iri == LOG_CONTENT => Some(eval_log_content(&premise.s, &premise.o, bindings)),
-        Term::Iri(ref iri) if iri == LOG_SEMANTICS => Some(eval_log_semantics(&premise.s, &premise.o, bindings)),
-        Term::Iri(ref iri) if iri == LOG_SEMANTICS_OR_ERROR => Some(eval_log_semantics_or_error(&premise.s, &premise.o, bindings)),
+        Term::Iri(ref iri) if matches!(iri.as_str(), LOG_CONTENT | LOG_SEMANTICS | LOG_SEMANTICS_OR_ERROR) => {
+            budget.unsupported_builtin(
+                premise,
+                "resource access requires a resolver; this build does not provide one, and fixture-specific fallback data has been removed",
+            );
+            Some(Vec::new())
+        }
         Term::Iri(ref iri) if iri == LOG_PARSED_AS_N3 => Some(eval_log_parsed_as_n3(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_SKOLEM => Some(eval_log_skolem(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == CRYPTO_SHA => Some(eval_crypto_sha(&premise.s, &premise.o, bindings)),
@@ -1492,8 +1821,12 @@ fn eval_builtin(
         Term::Iri(ref iri) if iri == MATH_DIFFERENCE => Some(eval_math_difference(&premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if is_math_operator(iri) => Some(eval_math_operator(iri, &premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if is_math_comparison(iri) => Some(eval_math_compare(iri, &premise.s, &premise.o, bindings)),
-        Term::Iri(ref iri) if is_string_builtin(iri) => Some(eval_string_builtin(iri, &premise.s, &premise.o, bindings, facts)),
+        Term::Iri(ref iri) if is_string_builtin(iri) => Some(eval_string_builtin(premise, iri, bindings, facts, budget)),
         Term::Iri(ref iri) if is_time_builtin(iri) => Some(eval_time_builtin(iri, &premise.s, &premise.o, bindings)),
+        Term::Iri(ref iri) if is_unsupported_builtin_iri(iri) => {
+            budget.unsupported_builtin(premise, "the predicate belongs to a known built-in namespace but has no implementation");
+            Some(Vec::new())
+        }
         _ => None,
     }
 }
@@ -1686,12 +2019,20 @@ fn eval_for_all_in(
     vec![canonicalize_bindings(&b)]
 }
 
-fn eval_log_conclusion(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<Bindings> {
+fn eval_log_conclusion(
+    subject: &Term,
+    object: &Term,
+    bindings: &Bindings,
+    budget: &mut SearchBudget,
+) -> Vec<Bindings> {
     let Term::Formula(input) = resolve(subject, bindings) else { return Vec::new(); };
     let mut doc = Document::new();
     doc.facts = input.clone();
     doc.rules = input.iter().filter_map(rule_from_triple).collect();
-    let result = reason(&doc, &ReasonerOptions::default());
+    let result = reason(&doc, &budget.nested_options());
+    let complete = result.is_complete();
+    budget.absorb_result(&result);
+    if !complete { return Vec::new(); }
 
     let mut closure = input;
     for t in result.derived {
@@ -1779,25 +2120,36 @@ fn match_formula_subset(scope: &[Triple], pattern: &[Triple], bindings: &Binding
     go(scope, pattern, 0, bindings.clone(), out);
 }
 
-fn eval_log_not_includes(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<Bindings> {
-    let subj = resolve_pattern(subject, bindings);
-    let Term::Formula(pattern) = resolve(object, bindings) else { return Vec::new(); };
+fn eval_log_not_includes(
+    premise: &Triple,
+    bindings: &Bindings,
+    budget: &mut SearchBudget,
+) -> Vec<Bindings> {
+    let subj = resolve_pattern(&premise.s, bindings);
+    let Term::Formula(pattern) = resolve(&premise.o, bindings) else { return Vec::new(); };
     match subj {
-        Term::Var(name) => {
-            let witness = Term::Formula(vec![Triple::new(
-                Term::Iri("http://example.org/a".to_string()),
-                Term::Iri("http://example.org/b".to_string()),
-                Term::Iri("http://example.org/c".to_string()),
-            )]);
-            let mut b = bindings.clone();
-            if bind_one_mut(&mut b, &name, witness) { vec![canonicalize_bindings(&b)] } else { Vec::new() }
+        Term::Var(_) | Term::Blank(_) => {
+            budget.unsupported_builtin(
+                premise,
+                "an unbound subject would require enumerating arbitrary formulas; no witness is fabricated",
+            );
+            Vec::new()
         }
-        Term::Blank(_) => vec![bindings.clone()],
         Term::Formula(scope) => {
             let mut solutions = Vec::new();
             let empty_rules: Vec<Rule> = Vec::new();
-            let mut budget = SearchBudget::default();
-            match_premise_at(&pattern, &scope, None, &empty_rules, 0, bindings.clone(), 0, &mut HashSet::new(), &mut budget, &mut solutions);
+            match_premise_at(
+                &pattern,
+                &scope,
+                None,
+                &empty_rules,
+                0,
+                bindings.clone(),
+                0,
+                &mut HashSet::new(),
+                budget,
+                &mut solutions,
+            );
             if solutions.is_empty() { vec![bindings.clone()] } else { Vec::new() }
         }
         _ => Vec::new(),
@@ -1897,40 +2249,6 @@ fn eval_log_langlit(subject: &Term, object: &Term, bindings: &Bindings, facts: &
         (Term::Var(_), Term::Var(_)) => vec![bindings.clone()],
         _ => Vec::new(),
     }
-}
-
-fn eval_log_content(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<Bindings> {
-    let Term::Iri(iri) = resolve(subject, bindings) else { return Vec::new(); };
-    let text = if iri.ends_with("/HELLO.txt") || iri.ends_with("/HELLO") {
-        "Hello, world!\n".to_string()
-    } else {
-        return Vec::new();
-    };
-    bind_string_result(object, text, bindings)
-}
-
-fn eval_log_semantics(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<Bindings> {
-    let Term::Iri(iri) = resolve(subject, bindings) else { return Vec::new(); };
-    if !iri.ends_with("/HELLO.n3") { return Vec::new(); }
-    let parsed = match parse_n3("@prefix : <http://example.org/> . :Hello a :World .", Some("http://example.org/")) { Ok(doc) => doc, Err(_) => return Vec::new() };
-    let value = Term::Formula(parsed.facts);
-    let mut b = bindings.clone();
-    if unify_term(object, &value, &mut b) { vec![canonicalize_bindings(&b)] } else { Vec::new() }
-}
-
-fn eval_log_semantics_or_error(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<Bindings> {
-    let value = match resolve(subject, bindings) {
-        Term::Iri(iri) if iri.ends_with("/HELLO.n3") => {
-            match parse_n3("@prefix : <http://example.org/> . :Hello a :World .", Some("http://example.org/")) {
-                Ok(doc) => Term::Formula(doc.facts),
-                Err(err) => Term::Literal(Literal::plain(err.to_string())),
-            }
-        }
-        Term::Iri(iri) => Term::Literal(Literal::plain(format!("resource error: {}", iri))),
-        _ => return Vec::new(),
-    };
-    let mut b = bindings.clone();
-    if unify_term(object, &value, &mut b) { vec![canonicalize_bindings(&b)] } else { Vec::new() }
 }
 
 fn eval_log_parsed_as_n3(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<Bindings> {
@@ -2649,7 +2967,15 @@ fn is_string_builtin(iri: &str) -> bool {
     )
 }
 
-fn eval_string_builtin(pred: &str, left: &Term, right: &Term, bindings: &Bindings, facts: &[Triple]) -> Vec<Bindings> {
+fn eval_string_builtin(
+    premise: &Triple,
+    pred: &str,
+    bindings: &Bindings,
+    facts: &[Triple],
+    budget: &mut SearchBudget,
+) -> Vec<Bindings> {
+    let left = &premise.s;
+    let right = &premise.o;
     match pred {
         STRING_LESS_THAN | STRING_GREATER_THAN | STRING_NOT_LESS_THAN | STRING_NOT_GREATER_THAN => {
             let Some(l) = string_value(&resolve(left, bindings)) else { return Vec::new(); };
@@ -2703,7 +3029,17 @@ fn eval_string_builtin(pred: &str, left: &Term, right: &Term, bindings: &Binding
         STRING_MATCHES | STRING_NOT_MATCHES => {
             let Some(text) = string_value(&resolve(left, bindings)) else { return Vec::new(); };
             let Some(pattern) = string_value(&resolve(right, bindings)) else { return Vec::new(); };
-            let matched = simple_regex_matches(&text, &pattern);
+            let regex = match Regex::new(&pattern) {
+                Ok(regex) => regex,
+                Err(err) => {
+                    budget.unsupported_builtin(
+                        premise,
+                        format!("regex pattern is not supported by the configured engine: {}", err),
+                    );
+                    return Vec::new();
+                }
+            };
+            let matched = regex.is_match(&text);
             let ok = if pred == STRING_MATCHES { matched } else { !matched };
             if ok { vec![bindings.clone()] } else { Vec::new() }
         }
@@ -2713,18 +3049,77 @@ fn eval_string_builtin(pred: &str, left: &Term, right: &Term, bindings: &Binding
             let Some(text) = string_value(&resolve(&items[0], bindings)) else { return Vec::new(); };
             let Some(from) = string_value(&resolve(&items[1], bindings)) else { return Vec::new(); };
             let Some(to) = string_value(&resolve(&items[2], bindings)) else { return Vec::new(); };
-            bind_string_result(right, simple_regex_replace(&text, &from, &to), bindings)
+            let regex = match Regex::new(&from) {
+                Ok(regex) => regex,
+                Err(err) => {
+                    budget.unsupported_builtin(
+                        premise,
+                        format!("regex pattern is not supported by the configured engine: {}", err),
+                    );
+                    return Vec::new();
+                }
+            };
+            let replacement = regex_replacement_for_rust(&to);
+            bind_string_result(right, regex.replace_all(&text, replacement.as_str()).into_owned(), bindings)
         }
         STRING_SCRAPE => {
             let Some(items) = rdf_or_native_list(left, bindings, facts) else { return Vec::new(); };
             if items.len() != 2 { return Vec::new(); }
             let Some(text) = string_value(&resolve(&items[0], bindings)) else { return Vec::new(); };
             let Some(pattern) = string_value(&resolve(&items[1], bindings)) else { return Vec::new(); };
-            let Some(scraped) = simple_scrape(&text, &pattern) else { return Vec::new(); };
+            let regex = match Regex::new(&pattern) {
+                Ok(regex) => regex,
+                Err(err) => {
+                    budget.unsupported_builtin(
+                        premise,
+                        format!("regex pattern is not supported by the configured engine: {}", err),
+                    );
+                    return Vec::new();
+                }
+            };
+            let Some(captures) = regex.captures(&text) else { return Vec::new(); };
+            let scraped = (1..captures.len())
+                .find_map(|index| captures.get(index))
+                .or_else(|| captures.get(0))
+                .map(|matched| matched.as_str().to_string());
+            let Some(scraped) = scraped else { return Vec::new(); };
             bind_string_result(right, scraped, bindings)
         }
         _ => Vec::new(),
     }
+}
+
+
+fn regex_replacement_for_rust(replacement: &str) -> String {
+    // N3 string:replace follows XPath-style replacement escaping: `\$`
+    // inserts a literal dollar sign and `\\` inserts a literal backslash.
+    // The regex crate uses `$$` for a literal dollar sign and treats a
+    // backslash as an ordinary replacement character.
+    let mut out = String::with_capacity(replacement.len());
+    let mut chars = replacement.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch != '\\' {
+            out.push(ch);
+            continue;
+        }
+        match chars.peek().copied() {
+            Some('$') => {
+                chars.next();
+                out.push_str("$$");
+            }
+            Some('\\') => {
+                chars.next();
+                out.push('\\');
+            }
+            Some(other) => {
+                chars.next();
+                out.push('\\');
+                out.push(other);
+            }
+            None => out.push('\\'),
+        }
+    }
+    out
 }
 
 fn bind_string_result(right: &Term, text: String, bindings: &Bindings) -> Vec<Bindings> {
@@ -2792,85 +3187,6 @@ fn simple_format(fmt: &str, args: &[String]) -> Option<String> {
     }
     if arg_index == args.len() { Some(out) } else { None }
 }
-
-fn simple_regex_matches(text: &str, pattern: &str) -> bool {
-    if text == pattern { return true; }
-    match pattern {
-        "^[a-z]+[ ][a-z]+!" => {
-            let parts: Vec<_> = text.strip_suffix('!').unwrap_or(text).split(' ').collect();
-            return parts.len() == 2 && parts.iter().all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_lowercase()));
-        }
-        "^\\w+\\s+\\w+!" => return text == "hello world!",
-        ".*(.)+.*" => return !text.is_empty(),
-        "^(?=[h])(?=.{5} )(?=.*!$).{12}$" => return text == "hello world!",
-        "^\\p{Ll}{5}\\x20\\p{L}{5}\\p{P}$" => return text == "γειαα κόσμο!",
-        "^(.+?)\\s(?:\\w+)(.)(?<=\\!)$" => return text == "hello world!",
-        "^..$" => return text.chars().count() == 2,
-        "^.$" => return text.chars().count() == 1,
-        "\\d" => return text.chars().any(|c| c.is_ascii_digit()),
-        ".*234" => return text.contains("234"),
-        _ => {}
-    }
-    if let Some(inner) = pattern.strip_prefix(".*").and_then(|s| s.strip_suffix(".*")) {
-        let simplified = inner.replace("(l)+", "l");
-        return text.contains(&simplified);
-    }
-    if let Some(prefix) = pattern.strip_prefix('^').and_then(|s| s.strip_suffix('$')) {
-        if !['[', '(', '\\', '.', '+', '*', '?'].iter().any(|ch| prefix.contains(*ch)) {
-            return text == prefix;
-        }
-    }
-    text.contains(pattern)
-}
-
-fn simple_regex_replace(text: &str, pattern: &str, replacement: &str) -> String {
-    match (pattern, replacement) {
-        ("(l)", "X$1") => text.replace('l', "Xl"),
-        ("(el)(lo)", "$2$1") => text.replacen("ello", "loel", 1),
-        ("(ab)|(a)", "[1=$1][2=$2]") => text.replacen("ab", "[1=ab][2=]", 1),
-        ("b", "\\$\\\\") => text.replace('b', "$\\"),
-        _ => text.replace(pattern, replacement),
-    }
-}
-
-fn simple_scrape(text: &str, pattern: &str) -> Option<String> {
-    if pattern == "x=([0-9]+)" {
-        let start = text.find("x=")? + 2;
-        let digits: String = text[start..].chars().take_while(|c| c.is_ascii_digit()).collect();
-        return if digits.is_empty() { None } else { Some(digits) };
-    }
-    if pattern == "^(.{8}).*$" {
-        return Some(text.chars().take(8).collect());
-    }
-    if pattern == ".*/([^/]+/)$" {
-        let trimmed = text.trim_end_matches('/');
-        let last = trimmed.rsplit('/').next()?;
-        return Some(format!("{}/", last));
-    }
-    if pattern == "(a.)|(.d)" {
-        return text.get(0..2).map(|s| s.to_string());
-    }
-    if pattern == "(😀)" {
-        return if text.contains('😀') { Some("😀".to_string()) } else { None };
-    }
-    if let Some(rest) = pattern.strip_prefix("^..(.") {
-        let _ = rest;
-        return text.chars().nth(2).map(|c| c.to_string());
-    }
-    if pattern == "^...(.)" {
-        return text.chars().nth(3).map(|c| c.to_string());
-    }
-    // Patterns generated by get-uuid.n3, e.g. ^.{12}(.{4}).*$
-    if let Some(rest) = pattern.strip_prefix("^.{") {
-        let (skip_s, rest) = rest.split_once("}(.{")?;
-        let (take_s, _) = rest.split_once("}).*$")?;
-        let skip = skip_s.parse::<usize>().ok()?;
-        let take = take_s.parse::<usize>().ok()?;
-        return Some(text.chars().skip(skip).take(take).collect());
-    }
-    None
-}
-
 
 fn is_time_builtin(iri: &str) -> bool {
     matches!(iri, TIME_YEAR | TIME_MONTH | TIME_DAY | TIME_HOUR | TIME_MINUTE | TIME_SECOND | TIME_TIME_ZONE)

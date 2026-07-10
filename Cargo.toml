@@ -1,6 +1,6 @@
 [package]
 name = "eyeron"
-version = "0.3.11"
+version = "0.3.12"
 edition = "2021"
 default-run = "eyeron"
 authors = ["Jos De Roo"]
@@ -27,6 +27,7 @@ path = "tests/w3c_rdf.rs"
 harness = false
 
 [dependencies]
+regex = "1"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 ureq = "2"

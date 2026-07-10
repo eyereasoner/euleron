@@ -5,7 +5,7 @@ use crate::parser::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rd
 use crate::printing::{rdf_result_to_string, result_to_string};
 use crate::proof::proof_to_n3;
 use crate::rdf_compat::{parse_rdf12, RdfFormat};
-use crate::reasoner::{reason as reason_document, ReasonerOptions};
+use crate::reasoner::{reason as reason_document, ReasonerError, ReasonerOptions, ReasonerResult};
 
 #[wasm_bindgen(js_name = version)]
 pub fn version() -> String {
@@ -55,6 +55,9 @@ fn run_report(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &st
     }
 
     let result = reason_document(&doc, &ReasonerOptions { proof, ..ReasonerOptions::default() });
+    if !result.is_complete() {
+        return Err(PlaygroundError::from_reasoner(&result));
+    }
     if proof {
         Ok(proof_to_n3(&doc.prefixes, &result))
     } else if rdf {
@@ -66,35 +69,73 @@ fn run_report(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &st
 
 #[derive(Debug)]
 struct PlaygroundError {
+    code: &'static str,
     display: String,
     message: String,
     editor: &'static str,
     line: Option<usize>,
     column: Option<usize>,
+    details: Option<String>,
 }
 
 impl PlaygroundError {
     fn from_error(err: EyeronError, source: &str, editor: &'static str, label: &str) -> Self {
         let (line, column) = err.offset.map(|offset| line_col(source, offset)).unwrap_or((0, 0));
         Self {
+            code: "parse_error",
             display: err.with_source_location(source, label),
             message: err.message,
             editor,
             line: (line > 0).then_some(line),
             column: (column > 0).then_some(column),
+            details: None,
+        }
+    }
+
+    fn from_reasoner(result: &ReasonerResult) -> Self {
+        let message = result.incomplete_summary().unwrap_or_else(|| "reasoning incomplete".to_string());
+        let limits = result
+            .limits_reached
+            .iter()
+            .map(|limit| json_string(&limit.to_string()))
+            .collect::<Vec<_>>()
+            .join(",");
+        let errors = result
+            .errors
+            .iter()
+            .map(|error| match error {
+                ReasonerError::UnsupportedBuiltin { builtin, detail, .. } => format!(
+                    "{{\"code\":\"unsupported_builtin\",\"builtin\":{},\"detail\":{}}}",
+                    json_string(builtin),
+                    json_string(detail),
+                ),
+            })
+            .collect::<Vec<_>>()
+            .join(",");
+        Self {
+            code: "reasoning_incomplete",
+            display: message.clone(),
+            message,
+            editor: "program",
+            line: None,
+            column: None,
+            details: Some(format!("{{\"limitsReached\":[{}],\"errors\":[{}]}}", limits, errors)),
         }
     }
 
     fn to_json(&self) -> String {
         let line = self.line.map(|value| value.to_string()).unwrap_or_else(|| "null".to_string());
         let column = self.column.map(|value| value.to_string()).unwrap_or_else(|| "null".to_string());
+        let details = self.details.as_deref().unwrap_or("null");
         format!(
-            "{{\"ok\":false,\"error\":{{\"message\":{},\"display\":{},\"editor\":{},\"line\":{},\"column\":{}}}}}",
+            "{{\"ok\":false,\"error\":{{\"code\":{},\"message\":{},\"display\":{},\"editor\":{},\"line\":{},\"column\":{},\"details\":{}}}}}",
+            json_string(self.code),
             json_string(&self.message),
             json_string(&self.display),
             json_string(self.editor),
             line,
             column,
+            details,
         )
     }
 }

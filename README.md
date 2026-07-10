@@ -29,10 +29,10 @@ Eyeron currently supports the core constructs used by the bundled examples:
 
 Implemented built-in families include a practical subset of:
 
-- `log:`: equality, inequality, query, `includes`/`notIncludes`, collect/conjunction/conclusion helpers, URI conversion, and scoped formula operations used by the examples;
+- `log:`: equality, inequality, query, `includes`, bound-formula `notIncludes`, collect/conjunction/conclusion helpers, URI conversion, and scoped formula operations used by the examples;
 - `math:`: sum, difference, numeric comparisons, and numeric equality/inequality;
 - `list:`: first, rest, firstRest, last, length, member, memberAt, in, notMember, remove, append, reverse, sort, iterate, and map;
-- `string:`: comparison, concatenation, containment, starts/ends-with, regex match/not-match, replace, scrape, and simple formatting;
+- `string:`: comparison, concatenation, containment, starts/ends-with, regex match/not-match, replace, scrape, and simple formatting. Regex operations use Rust's Unicode-aware regex engine; unsupported syntax such as look-around is reported explicitly;
 - `time:`: year, month, day, hour, minute, second, and time-zone extraction.
 
 ## Build
@@ -113,7 +113,9 @@ cargo run -- input.trig
 cargo run -- --rdf --base-iri https://example.org/base - < input.ttl
 ```
 
-The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, `-r`/`--rdf` enables RDF/TriG compatibility, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
+The CLI exposes the reasoning limits as `--max-iterations`, `--max-match-steps`, `--max-backward-depth`, and `--max-backward-solutions`. Reaching one of these limits makes the command fail with an incomplete-reasoning diagnostic rather than printing a partial closure as if it were complete.
+
+The CLI also accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, `-r`/`--rdf` enables RDF/TriG compatibility, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 
@@ -145,7 +147,7 @@ Proof output can be enabled with `-p`/`--proof`:
 cargo run -- --proof examples/socrates.n3
 ```
 
-In proof mode Eyeron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`. Eyeling-style proof goldens are bundled under `examples/proof/`.
+In proof mode Eyeron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`. Verified built-ins are identified with `pe:builtin`; support that cannot be independently verified is rendered as `pe:unproven` rather than being mislabeled as a fact. Eyeling-style proof goldens are bundled under `examples/proof/`.
 
 ## Library use
 
@@ -170,17 +172,29 @@ fn main() -> eyeron::Result<()> {
 }
 ```
 
-For lower-level use, parse first and call the reasoner directly:
+For lower-level use, parse first and call the reasoner directly. This API returns partial data together with an explicit completion status, reached limits, and structured errors:
 
 ```rust
 use eyeron::{parse_n3, reason_document, result_to_string, ReasonerOptions};
 
 fn run(input: &str) -> eyeron::Result<String> {
     let doc = parse_n3(input, None)?;
-    let result = reason_document(&doc, &ReasonerOptions::default());
+    let options = ReasonerOptions {
+        max_iterations: 10_000,
+        max_match_steps: 200_000,
+        max_backward_depth: 32,
+        max_backward_solutions_per_goal: 1_024,
+        ..ReasonerOptions::default()
+    };
+    let result = reason_document(&doc, &options);
+    if let Some(summary) = result.incomplete_summary() {
+        return Err(eyeron::EyeronError::new(summary));
+    }
     Ok(result_to_string(&doc.prefixes, &result.derived))
 }
 ```
+
+`eyeron::reason` and the CLI reject incomplete runs. Embedders that intentionally want partial results can call `reason_document` and inspect `ReasonerResult::status`, `limits_reached`, `errors`, and `statistics`.
 
 
 ## RDF Messages
@@ -232,6 +246,8 @@ Run the full validation suite with:
 cargo test
 ```
 
+GitHub Actions also checks text-file whitespace and final newlines, runs Clippy, executes debug and release tests, validates crate packaging, and compares two independent WebAssembly builds byte-for-byte.
+
 The test suite includes:
 
 - parser and built-in unit tests;
@@ -247,7 +263,7 @@ checking examples/hanoi.n3
 ok examples/hanoi.n3 (0.012s)
 ```
 
-The example comparison checks stable output lines rather than exact byte-for-byte output. This avoids false failures caused by derived triple ordering or generated blank-node labels. The Notation3 conformance test mirrors the upstream score model: success tests must derive the expected result, fail tests must not derive it, and crash tests are accepted only when they do not expose normal test results.
+The example comparison checks stable output lines rather than exact byte-for-byte output. This avoids false failures caused by derived triple ordering or generated blank-node labels. The Notation3 conformance test mirrors the upstream score model: success tests must derive the expected result, fail tests must not derive it, and crash tests are accepted only when they do not expose normal test results. Files that exercise a built-in now reported as explicitly unsupported are counted separately as unsupported rather than as passed; unresolved incomplete, nonconforming, and crashed cases still fail the test.
 
 The bundled examples include rule, list, string, log, time, algebraic, policy/alignment, RDF Message Log, and deep-taxonomy workloads. The five `deep-taxonomy-*` examples are included in the normal `cargo test` sweep and exercise the agenda-based single-premise rule path.
 
@@ -331,9 +347,9 @@ Eyeron targets native Rust execution, command-line use, embedding from Rust, and
 This first release focuses on the core reasoning path and the bundled example suite. The following areas are intentionally limited or incomplete:
 
 - continuous RDF Messages streaming input/output beyond finite log replay;
-- external URL dereferencing;
+- external URL dereferencing; `log:content`, `log:semantics`, and `log:semanticsOrError` return structured unsupported-built-in errors because this build has no resource resolver;
 - persistent fact stores;
-- proof trace comments and full explanation output;
+- proof trace comments and richer explanation metadata beyond verified facts, built-ins, backward proofs, and explicit `pe:unproven` leaves;
 - custom external built-in modules;
 - complete coverage of every N3 built-in namespace.
 

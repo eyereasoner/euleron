@@ -473,3 +473,289 @@ fn rdf12_parenthesized_triple_terms_use_formula_term_representation() {
     assert!(json.contains("\"termType\":\"Quad\""), "{}", json);
     assert!(json.contains("http://example.org/a"), "{}", json);
 }
+
+#[test]
+fn reasoner_reports_iteration_limit_instead_of_silent_partial_success() {
+    use eyeron::{CompletionStatus, ReasonerLimit};
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            :a :p :b .
+            { :a :p :b } => { :a :q :c } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(
+        &doc,
+        &ReasonerOptions { max_iterations: 0, ..ReasonerOptions::default() },
+    );
+
+    assert_eq!(result.status, CompletionStatus::Incomplete);
+    assert_eq!(result.statistics.iterations, 0);
+    assert!(result.limits_reached.contains(&ReasonerLimit::Iterations));
+    assert!(result.derived.is_empty());
+}
+
+#[test]
+fn reasoner_reports_match_step_limit() {
+    use eyeron::{CompletionStatus, ReasonerLimit};
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            :a :p :b .
+            :a :q :c .
+            { :a :p :b . :a :q :c } => { :a :r :d } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(
+        &doc,
+        &ReasonerOptions { max_match_steps: 0, ..ReasonerOptions::default() },
+    );
+
+    assert_eq!(result.status, CompletionStatus::Incomplete);
+    assert!(result.limits_reached.contains(&ReasonerLimit::MatchSteps));
+    assert!(result.derived.is_empty());
+}
+
+#[test]
+fn resource_builtin_without_resolver_is_a_structured_error() {
+    use eyeron::{CompletionStatus, ReasonerError};
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+            { <http://example.org/HELLO.txt> log:content ?text } => { :result :text ?text } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert_eq!(result.status, CompletionStatus::Incomplete);
+    assert!(result.errors.iter().any(|error| matches!(
+        error,
+        ReasonerError::UnsupportedBuiltin { builtin, .. }
+            if builtin == "http://www.w3.org/2000/10/swap/log#content"
+    )));
+    assert!(result.derived.is_empty());
+}
+
+#[test]
+fn unbound_not_includes_does_not_fabricate_a_witness_formula() {
+    use eyeron::ReasonerError;
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+            { ?scope log:notIncludes { :a :b :c } } => { :result :scope ?scope } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert!(result.errors.iter().any(|error| matches!(
+        error,
+        ReasonerError::UnsupportedBuiltin { builtin, .. }
+            if builtin == "http://www.w3.org/2000/10/swap/log#notIncludes"
+    )));
+    assert!(result.derived.is_empty());
+}
+
+#[test]
+fn regex_builtins_use_general_regex_matching() {
+    let source = r#"
+        @prefix : <http://example.org/> .
+        @prefix string: <http://www.w3.org/2000/10/swap/string#> .
+        { "abc123" string:matches "^[a-z]+[0-9]+$" } => { :result :value "matched" } .
+    "#;
+    let doc = parse_n3(source, None).unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert!(result.is_complete(), "{:?}", result.errors);
+    assert!(result_to_string(&doc.prefixes, &result.derived).contains(":result :value \"matched\""));
+}
+
+#[test]
+fn unsupported_regex_syntax_is_reported() {
+    use eyeron::ReasonerError;
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix string: <http://www.w3.org/2000/10/swap/string#> .
+            { "abc" string:matches "^(?=a)abc$" } => { :result :value "matched" } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert!(result.errors.iter().any(|error| matches!(
+        error,
+        ReasonerError::UnsupportedBuiltin { builtin, detail, .. }
+            if builtin == "http://www.w3.org/2000/10/swap/string#matches"
+                && detail.contains("regex pattern")
+    )));
+    assert!(result.derived.is_empty());
+}
+
+#[test]
+fn proof_output_marks_missing_support_as_unproven() {
+    use eyeron::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
+    use eyeron::reasoner::DerivedFact;
+    use std::collections::BTreeMap;
+
+    let missing = Triple::new(Term::iri("http://example.org/a"), Term::iri("http://example.org/p"), Term::iri("http://example.org/b"));
+    let derived = Triple::new(Term::iri("http://example.org/a"), Term::iri("http://example.org/q"), Term::iri("http://example.org/c"));
+    let rule = Rule::new(vec![missing.clone()], vec![derived.clone()], true);
+    let proof = DerivedFact {
+        fact: derived.clone(),
+        rule: rule.clone(),
+        premises: vec![missing],
+        bindings: BTreeMap::new(),
+    };
+    let result = ReasonerResult {
+        status: CompletionStatus::Complete,
+        limits_reached: Vec::new(),
+        errors: Vec::new(),
+        statistics: ReasonerStatistics::default(),
+        explicit: Vec::new(),
+        explicit_sources: BTreeMap::new(),
+        derived: vec![derived.clone()],
+        closure: vec![derived],
+        proofs: vec![proof],
+        rules: vec![rule],
+    };
+
+    let output = proof_to_n3(&BTreeMap::new(), &result);
+    assert!(output.contains("pe:unproven"), "{}", output);
+    assert!(!output.contains("pe:fact \"<unknown>\""), "{}", output);
+}
+
+#[test]
+fn regex_replacement_preserves_n3_dollar_and_backslash_escapes() {
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix string: <http://www.w3.org/2000/10/swap/string#> .
+            { ("abcd" "b" "\\$\\\\") string:replace "a$\\cd" } => { :result :value "matched" } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert!(result.is_complete(), "{:?}", result.errors);
+    assert!(result_to_string(&doc.prefixes, &result.derived).contains(":result :value \"matched\""));
+}
+
+#[test]
+fn high_level_reason_rejects_incomplete_runs() {
+    let error = eyeron::reason(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+            { <http://example.org/data.txt> log:content ?text } => { :result :text ?text } .
+        "#,
+    )
+    .unwrap_err();
+
+    assert!(error.to_string().contains("reasoning incomplete"), "{}", error);
+    assert!(error.to_string().contains("log#content"), "{}", error);
+}
+
+#[test]
+fn proof_output_does_not_claim_an_unverified_builtin_succeeded() {
+    use eyeron::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
+    use eyeron::reasoner::DerivedFact;
+    use std::collections::BTreeMap;
+
+    let unsupported_builtin = Triple::new(
+        Term::literal("abc"),
+        Term::iri("http://www.w3.org/2000/10/swap/string#matches"),
+        Term::literal("^(?=a)abc$"),
+    );
+    let derived = Triple::new(
+        Term::iri("http://example.org/result"),
+        Term::iri("http://example.org/value"),
+        Term::literal("matched"),
+    );
+    let rule = Rule::new(vec![unsupported_builtin.clone()], vec![derived.clone()], true);
+    let proof = DerivedFact {
+        fact: derived.clone(),
+        rule: rule.clone(),
+        premises: vec![unsupported_builtin],
+        bindings: BTreeMap::new(),
+    };
+    let result = ReasonerResult {
+        status: CompletionStatus::Complete,
+        limits_reached: Vec::new(),
+        errors: Vec::new(),
+        statistics: ReasonerStatistics::default(),
+        explicit: Vec::new(),
+        explicit_sources: BTreeMap::new(),
+        derived: vec![derived.clone()],
+        closure: vec![derived],
+        proofs: vec![proof],
+        rules: vec![rule],
+    };
+
+    let output = proof_to_n3(&BTreeMap::new(), &result);
+    assert!(output.contains("pe:unproven"), "{}", output);
+    assert!(!output.contains("pe:builtin string:matches"), "{}", output);
+}
+
+#[test]
+fn log_name_of_remains_an_ordinary_graph_predicate() {
+    use eyeron::Term;
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+            :payload log:nameOf { :subject :predicate :object } .
+            { :payload log:nameOf ?formula } => { :result :formula ?formula } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert!(result.is_complete(), "{:?}", result.errors);
+    assert!(result.derived.iter().any(|triple| {
+        triple.s == Term::iri("http://example.org/result")
+            && triple.p == Term::iri("http://example.org/formula")
+            && matches!(&triple.o, Term::Formula(_))
+    }));
+}
+
+#[test]
+fn unknown_predicate_in_builtin_namespace_is_reported() {
+    use eyeron::ReasonerError;
+
+    let doc = parse_n3(
+        r#"
+            @prefix : <http://example.org/> .
+            @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+            { :subject log:unknownBuiltin ?value } => { :result :value ?value } .
+        "#,
+        None,
+    )
+    .unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+
+    assert!(result.errors.iter().any(|error| matches!(
+        error,
+        ReasonerError::UnsupportedBuiltin { builtin, .. }
+            if builtin == "http://www.w3.org/2000/10/swap/log#unknownBuiltin"
+    )));
+    assert!(result.derived.is_empty());
+}
