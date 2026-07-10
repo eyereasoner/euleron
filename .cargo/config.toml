@@ -1,0 +1,2 @@
+[alias]
+playground = "run --release --bin eyeron-playground-build --"

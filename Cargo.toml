@@ -1,6 +1,6 @@
 [package]
 name = "eyeron"
-version = "0.3.8"
+version = "0.3.9"
 edition = "2021"
 default-run = "eyeron"
 authors = ["Jos De Roo"]
@@ -16,6 +16,10 @@ crate-type = ["rlib", "cdylib"]
 [[bin]]
 name = "eyeron"
 path = "src/main.rs"
+
+[[bin]]
+name = "eyeron-playground-build"
+path = "tools/build_playground.rs"
 
 [[test]]
 name = "w3c_rdf"

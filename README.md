@@ -51,16 +51,24 @@ target/release/eyeron
 
 Try it online: <https://eyereasoner.github.io/eyeron/playground>
 
-A browser playground is included as `playground.html`. It uses the same Rust reasoner through WebAssembly. Build the browser package and serve the repository directory over HTTP:
+A browser playground is included as `playground.html`. It uses the same Rust reasoner through WebAssembly. Build the browser package and clean the generated `pkg/` directory with the Cargo helper:
 
 ```bash
-wasm-pack build --target web --out-dir pkg
+cargo playground
 python3 -m http.server
+```
+
+The helper runs `wasm-pack build --target web --out-dir pkg` and removes the generated `pkg/.gitignore`, `pkg/README.md`, and `pkg/LICENSE.md` files that are not needed for GitHub Pages. Commit at least these browser artifacts:
+
+```text
+playground.html
+pkg/eyeron.js
+pkg/eyeron_bg.wasm
 ```
 
 The release build config enables the WebAssembly features used by Rust during `wasm-opt` optimization (`bulk-memory` and nontrapping float-to-int conversions). If you use a very old Binaryen/wasm-opt, update `wasm-pack`/Binaryen first.
 
-Then open `http://localhost:8000/playground.html`. The playground supports normal N3 reasoning, `-p`-style proof output, `-r`-style RDF/TriG compatibility, bundled example loading from `examples/`, syntax-error highlighting, compact share links, and Gist-backed links for oversized playground states.
+Then open `http://localhost:8000/playground.html`. The playground supports normal N3 reasoning, `-p`-style proof output, `-r`-style RDF/TriG compatibility, bundled example loading from `examples/`, rendered Markdown output when the result is Markdown, syntax-error highlighting, compact share links, and Gist-backed links for oversized playground states.
 
 ## Command-line use
 

@@ -47,6 +47,52 @@
       }
       .data-editor .CodeMirror { min-height: 8rem; }
       .output .CodeMirror { background: #fff; }
+      .output-header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.65rem; }
+      .output-header-row .section-title { margin-bottom: 0; }
+      .output-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+      button.output-tab {
+        min-height: 32px;
+        padding: 0.3rem 0.75rem;
+        border-radius: 999px;
+        background: transparent;
+        color: #4b5563;
+        box-shadow: none;
+        font-size: 0.8rem;
+      }
+      button.output-tab:hover:not(:disabled) { background: #eef2ff; color: #1d4ed8; }
+      button.output-tab.active { background: #2563eb; color: #ffffff; }
+      .markdown-output {
+        margin: 0.25rem 0 0;
+        border-radius: 0.75rem;
+        border: 1px solid #d1d5db;
+        padding: 1rem;
+        background: #ffffff;
+        color: #111827;
+        font-size: 0.92rem;
+        line-height: 1.55;
+        min-height: 5rem;
+        max-height: 48rem;
+        overflow: auto;
+      }
+      .markdown-output.is-empty { color: #6b7280; }
+      .markdown-output h1, .markdown-output h2, .markdown-output h3, .markdown-output h4, .markdown-output h5, .markdown-output h6 { margin: 1rem 0 0.5rem; line-height: 1.25; color: inherit; }
+      .markdown-output h1:first-child, .markdown-output h2:first-child, .markdown-output h3:first-child { margin-top: 0; }
+      .markdown-output h1 { font-size: 1.45rem; }
+      .markdown-output h2 { font-size: 1.2rem; }
+      .markdown-output h3 { font-size: 1.05rem; }
+      .markdown-output p { margin: 0.6rem 0; }
+      .markdown-output ul, .markdown-output ol { margin: 0.55rem 0 0.75rem 1.35rem; padding: 0; }
+      .markdown-output li { margin: 0.2rem 0; }
+      .markdown-output a { color: #2563eb; text-decoration: none; }
+      .markdown-output a:hover { text-decoration: underline; }
+      .markdown-output code { border-radius: 0.35rem; padding: 0.1rem 0.25rem; background: #f3f4f6; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.88em; }
+      .markdown-output pre { overflow: auto; border-radius: 0.65rem; padding: 0.75rem; background: #f9fafb; border: 1px solid #e5e7eb; }
+      .markdown-output pre code { padding: 0; background: transparent; }
+      .markdown-output blockquote { margin: 0.75rem 0; padding-left: 0.85rem; border-left: 3px solid #d1d5db; color: #4b5563; }
+      .markdown-output table { width: 100%; border-collapse: collapse; margin: 0.75rem 0; font-size: 0.88rem; }
+      .markdown-output th, .markdown-output td { border: 1px solid #d1d5db; padding: 0.4rem 0.5rem; vertical-align: top; }
+      .markdown-output th { background: #f9fafb; font-weight: 600; }
+      .markdown-source-hidden { display: none !important; }
       .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 0.7rem; margin-top: 0.8rem; }
       button, select {
         min-height: 42px;
@@ -147,8 +193,31 @@
         </div>
 
         <div class="card output">
-          <h2 class="section-title">Output</h2>
-          <textarea id="output" spellcheck="false"></textarea>
+          <div class="output-header-row">
+            <h2 class="section-title">Output</h2>
+            <div class="output-tabs" role="tablist" aria-label="Output view" hidden>
+              <button
+                id="output-rendered-tab"
+                type="button"
+                class="output-tab active"
+                role="tab"
+                aria-selected="true"
+                aria-controls="output-rendered"
+              >Rendered</button>
+              <button
+                id="output-source-tab"
+                type="button"
+                class="output-tab"
+                role="tab"
+                aria-selected="false"
+                aria-controls="output-source"
+              >Markdown source</button>
+            </div>
+          </div>
+          <div id="output-rendered" class="markdown-output is-empty" role="tabpanel" aria-labelledby="output-rendered-tab" hidden>(no output yet)</div>
+          <div id="output-source" role="tabpanel" aria-labelledby="output-source-tab">
+            <textarea id="output" spellcheck="false"></textarea>
+          </div>
         </div>
       </section>
     </main>
@@ -266,7 +335,15 @@
       const status = document.getElementById('status');
       const shareStatus = document.getElementById('share-status');
       const version = document.getElementById('version');
+      const outputRenderedPanel = document.getElementById('output-rendered');
+      const outputSourcePanel = document.getElementById('output-source');
+      const outputTabs = document.querySelector('.output-tabs');
+      const outputRenderedTab = document.getElementById('output-rendered-tab');
+      const outputSourceTab = document.getElementById('output-source-tab');
 
+      let outputMarkdownMode = false;
+      let outputMarkdownAutoDetect = false;
+      let outputView = 'source';
       let eyeronModule = null;
       let currentExample = '';
       let currentExampleText = '';
@@ -283,6 +360,284 @@
           option.value = name;
           option.textContent = name;
           exampleSelect.appendChild(option);
+        }
+      }
+
+      function escapeHtml(value) {
+        return String(value == null ? '' : value)
+          .replace(/&/g, '&amp;')
+          .replace(/</g, '&lt;')
+          .replace(/>/g, '&gt;')
+          .replace(/"/g, '&quot;');
+      }
+
+      function escapeAttr(value) {
+        return escapeHtml(value).replace(/'/g, '&#39;');
+      }
+
+      function isSafeMarkdownHref(href) {
+        const value = String(href || '').trim();
+        if (!value) return false;
+        if (/^(https?:|mailto:)/i.test(value)) return true;
+        if (/^(#|\/|\.\/|\.\.\/)/.test(value)) return true;
+        return !/^[a-z][a-z0-9+.-]*:/i.test(value);
+      }
+
+      function renderInlineMarkdownNoLinks(value) {
+        const codeTokens = [];
+        let text = String(value == null ? '' : value).replace(/`([^`\n]+)`/g, (_m, code) => {
+          const token = String.fromCharCode(0) + 'CODE' + codeTokens.length + String.fromCharCode(0);
+          codeTokens.push('<code>' + escapeHtml(code) + '</code>');
+          return token;
+        });
+
+        text = escapeHtml(text);
+        text = text.replace(/\*\*([^*\n]+)\*\*/g, '<strong>$1</strong>');
+        text = text.replace(/__([^_\n]+)__/g, '<strong>$1</strong>');
+        text = text.replace(/(^|[^*])\*([^*\n]+)\*(?!\*)/g, '$1<em>$2</em>');
+        text = text.replace(/(^|[^_])_([^_\n]+)_(?!_)/g, '$1<em>$2</em>');
+
+        for (let i = 0; i < codeTokens.length; i += 1) {
+          text = text.split(String.fromCharCode(0) + 'CODE' + i + String.fromCharCode(0)).join(codeTokens[i]);
+        }
+        return text;
+      }
+
+      function renderInlineMarkdown(value) {
+        const linkTokens = [];
+        let text = String(value == null ? '' : value).replace(/\[([^\]\n]+)\]\(([^)\s]+)(?:\s+"[^"]*")?\)/g, (_m, label, href) => {
+          const token = String.fromCharCode(0) + 'LINK' + linkTokens.length + String.fromCharCode(0);
+          const cleanHref = String(href || '').trim();
+          const htmlLabel = renderInlineMarkdownNoLinks(label);
+          linkTokens.push(
+            isSafeMarkdownHref(cleanHref)
+              ? '<a href="' + escapeAttr(cleanHref) + '" target="_blank" rel="noopener noreferrer">' + htmlLabel + '</a>'
+              : htmlLabel,
+          );
+          return token;
+        });
+
+        text = renderInlineMarkdownNoLinks(text);
+        for (let i = 0; i < linkTokens.length; i += 1) {
+          text = text.split(String.fromCharCode(0) + 'LINK' + i + String.fromCharCode(0)).join(linkTokens[i]);
+        }
+        return text;
+      }
+
+      function splitMarkdownTableRow(line) {
+        let value = String(line || '').trim();
+        if (value.startsWith('|')) value = value.slice(1);
+        if (value.endsWith('|')) value = value.slice(0, -1);
+        return value.split('|').map((cell) => cell.trim());
+      }
+
+      function isMarkdownTableSeparator(line) {
+        const cells = splitMarkdownTableRow(line);
+        return cells.length > 1 && cells.every((cell) => /^:?-{3,}:?$/.test(cell));
+      }
+
+      function renderMarkdownTable(lines, start) {
+        const header = splitMarkdownTableRow(lines[start]);
+        const rows = [];
+        let i = start + 2;
+        while (i < lines.length && /\|/.test(lines[i] || '') && String(lines[i] || '').trim()) {
+          rows.push(splitMarkdownTableRow(lines[i]));
+          i += 1;
+        }
+        const headHtml = header.map((cell) => '<th>' + renderInlineMarkdown(cell) + '</th>').join('');
+        const bodyHtml = rows
+          .map((row) => '<tr>' + row.map((cell) => '<td>' + renderInlineMarkdown(cell) + '</td>').join('') + '</tr>')
+          .join('');
+        return {
+          html: '<table><thead><tr>' + headHtml + '</tr></thead><tbody>' + bodyHtml + '</tbody></table>',
+          next: i,
+        };
+      }
+
+      function renderMarkdownToHtml(markdown) {
+        const source = String(markdown == null ? '' : markdown).replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+        if (!source.trim()) return '<p>(no output yet)</p>';
+
+        const lines = source.split('\n');
+        const blocks = [];
+        let i = 0;
+
+        function paragraphFrom(start) {
+          const parts = [];
+          let j = start;
+          while (j < lines.length) {
+            const line = lines[j];
+            const trimmed = String(line || '').trim();
+            if (!trimmed) break;
+            if (/^```/.test(trimmed)) break;
+            if (/^#{1,6}\s+/.test(trimmed)) break;
+            if (/^[-*_]{3,}\s*$/.test(trimmed)) break;
+            if (/^\s*([-*+])\s+/.test(line) || /^\s*\d+\.\s+/.test(line)) break;
+            if (/^>\s?/.test(line)) break;
+            if (/\|/.test(line || '') && j + 1 < lines.length && isMarkdownTableSeparator(lines[j + 1])) break;
+
+            parts.push(renderInlineMarkdown(line.replace(/\s+$/, '')));
+            j += 1;
+          }
+          return { html: '<p>' + parts.join('<br>') + '</p>', next: j };
+        }
+
+        while (i < lines.length) {
+          const line = lines[i];
+          const trimmed = String(line || '').trim();
+
+          if (!trimmed) { i += 1; continue; }
+
+          const fence = trimmed.match(/^```([^`]*)$/);
+          if (fence) {
+            const code = [];
+            i += 1;
+            while (i < lines.length && !/^```\s*$/.test(String(lines[i] || '').trim())) {
+              code.push(lines[i]);
+              i += 1;
+            }
+            if (i < lines.length) i += 1;
+            blocks.push('<pre><code>' + escapeHtml(code.join('\n')) + '</code></pre>');
+            continue;
+          }
+
+          const heading = trimmed.match(/^(#{1,6})\s+(.*?)\s*#*$/);
+          if (heading) {
+            const level = heading[1].length;
+            blocks.push('<h' + level + '>' + renderInlineMarkdown(heading[2]) + '</h' + level + '>');
+            i += 1;
+            continue;
+          }
+
+          if (/^[-*_]{3,}\s*$/.test(trimmed)) { blocks.push('<hr>'); i += 1; continue; }
+
+          if (/\|/.test(line || '') && i + 1 < lines.length && isMarkdownTableSeparator(lines[i + 1])) {
+            const table = renderMarkdownTable(lines, i);
+            blocks.push(table.html);
+            i = table.next;
+            continue;
+          }
+
+          if (/^\s*([-*+])\s+/.test(line)) {
+            const items = [];
+            while (i < lines.length) {
+              const m = String(lines[i] || '').match(/^\s*[-*+]\s+(.*)$/);
+              if (!m) break;
+              items.push('<li>' + renderInlineMarkdown(m[1]) + '</li>');
+              i += 1;
+            }
+            blocks.push('<ul>' + items.join('') + '</ul>');
+            continue;
+          }
+
+          if (/^\s*\d+\.\s+/.test(line)) {
+            const items = [];
+            while (i < lines.length) {
+              const m = String(lines[i] || '').match(/^\s*\d+\.\s+(.*)$/);
+              if (!m) break;
+              items.push('<li>' + renderInlineMarkdown(m[1]) + '</li>');
+              i += 1;
+            }
+            blocks.push('<ol>' + items.join('') + '</ol>');
+            continue;
+          }
+
+          if (/^>\s?/.test(line)) {
+            const quoted = [];
+            while (i < lines.length && /^>\s?/.test(String(lines[i] || ''))) {
+              quoted.push(String(lines[i] || '').replace(/^>\s?/, ''));
+              i += 1;
+            }
+            blocks.push('<blockquote>' + renderMarkdownToHtml(quoted.join('\n')) + '</blockquote>');
+            continue;
+          }
+
+          const paragraph = paragraphFrom(i);
+          blocks.push(paragraph.html);
+          i = paragraph.next > i ? paragraph.next : i + 1;
+        }
+
+        return blocks.join('\n');
+      }
+
+      function isLikelyTurtleOutput(value) {
+        const text = String(value == null ? '' : value).trim();
+        if (!text) return false;
+        if (/^@prefix\s+[^\s]+\s+<[^>]+>\s*\./im.test(text)) return true;
+        if (/^prefix\s+[^\s]+\s+<[^>]+>\s*$/im.test(text)) return true;
+        const lines = text.split(/\r\n|\n|\r/).map((line) => line.trim()).filter(Boolean);
+        let tripleLike = 0;
+        const turtleSubject = '(?:<[^>]+>|_:[A-Za-z][\\w-]*|:[^\\s]+|[A-Za-z_][\\w.-]*:[^\\s]*)';
+        const turtlePredicate = '(?:a|=|<[^>]+>|:[^\\s]+|[A-Za-z_][\\w.-]*:[^\\s]+)';
+        const turtleObject = "(?:<[^>]+>|_:[A-Za-z][\\w-]*|:[^\\s]+|[A-Za-z_][\\w.-]*:[^\\s]+|[\"']|[-+]?(?:\\d+(?:\\.\\d*)?|\\.\\d+)(?:[eE][-+]?\\d+)?|true|false|\\(|\\[|\\{)";
+        const turtleTripleStart = new RegExp('^' + turtleSubject + '\\s+' + turtlePredicate + '\\s+' + turtleObject + '(?:\\s|[.;,]|$)');
+        for (const line of lines) {
+          if (!line || line.startsWith('#') || !/\.\s*$/.test(line)) continue;
+          if (turtleTripleStart.test(line)) tripleLike += 1;
+        }
+        return tripleLike > 0;
+      }
+
+      function isLikelyMarkdownOutput(value) {
+        const text = String(value == null ? '' : value).trim();
+        if (!text || text === '(no output yet)' || isLikelyTurtleOutput(text)) return false;
+        if (/^#{1,6}\s+\S/m.test(text)) return true;
+        if (/^```/m.test(text)) return true;
+        if (/^>\s+\S/m.test(text)) return true;
+        if (/^\s*[-*+]\s+\S/m.test(text)) return true;
+        if (/^\s*\d+\.\s+\S/m.test(text)) return true;
+        if (/\[[^\]\n]+\]\((?:https?:|mailto:|#|\/|\.\/|\.\.\/)[^)]+\)/i.test(text)) return true;
+        if (/\*\*[^*\n]+\*\*/.test(text) || /__[^_\n]+__/.test(text)) return true;
+        if (/\|/.test(text)) {
+          const lines = text.split(/\r\n|\n|\r/);
+          for (let i = 0; i + 1 < lines.length; i += 1) {
+            if (/\|/.test(lines[i]) && isMarkdownTableSeparator(lines[i + 1])) return true;
+          }
+        }
+        return false;
+      }
+
+      function syncRenderedOutput() {
+        if (!outputRenderedPanel) return;
+        const value = output.getValue();
+        outputRenderedPanel.innerHTML = renderMarkdownToHtml(value);
+        outputRenderedPanel.classList.toggle('is-empty', !String(value || '').trim() || String(value).trim() === '(no output yet)');
+      }
+
+      function setOutputMarkdownMode(enabled) {
+        outputMarkdownMode = !!enabled;
+        if (outputTabs) outputTabs.hidden = !outputMarkdownMode;
+      }
+
+      function setOutputView(nextView) {
+        outputView = outputMarkdownMode && nextView !== 'source' ? 'rendered' : 'source';
+        const showRendered = outputMarkdownMode && outputView === 'rendered';
+        if (outputRenderedPanel) outputRenderedPanel.hidden = !showRendered;
+        if (outputSourcePanel) outputSourcePanel.classList.toggle('markdown-source-hidden', showRendered);
+        if (outputRenderedTab) {
+          outputRenderedTab.classList.toggle('active', showRendered);
+          outputRenderedTab.setAttribute('aria-selected', showRendered ? 'true' : 'false');
+        }
+        if (outputSourceTab) {
+          outputSourceTab.classList.toggle('active', outputMarkdownMode && !showRendered);
+          outputSourceTab.setAttribute('aria-selected', outputMarkdownMode && !showRendered ? 'true' : 'false');
+        }
+        if (showRendered) syncRenderedOutput();
+        else if (output && typeof output.refresh === 'function') output.refresh();
+      }
+
+      function setOutputText(text, preferredView = 'auto') {
+        outputMarkdownAutoDetect = preferredView === 'auto';
+        output.setValue(String(text == null ? '' : text));
+        syncRenderedOutput();
+        if (outputMarkdownAutoDetect) {
+          const markdownMode = isLikelyMarkdownOutput(output.getValue());
+          setOutputMarkdownMode(markdownMode);
+          setOutputView(markdownMode ? 'rendered' : 'source');
+        } else {
+          const markdownMode = preferredView !== 'source';
+          setOutputMarkdownMode(markdownMode);
+          setOutputView(markdownMode && preferredView !== 'source' ? 'rendered' : 'source');
         }
       }
 
@@ -324,7 +679,7 @@
 
       function showReasoningError(report) {
         const err = report && report.error ? report.error : {};
-        output.setValue(String(err.display || err.message || 'Unknown error'));
+        setOutputText(String(err.display || err.message || 'Unknown error'), 'source');
         const editor = err.editor === 'data' ? data : input;
         if (Number.isFinite(err.line) && err.line > 0) {
           highlightEditorError(editor, err.line, Number.isFinite(err.column) ? err.column : 1);
@@ -720,7 +1075,7 @@
         } catch (err) {
           version.textContent = 'not loaded';
           setStatus('Build the wasm package first: wasm-pack build --target web --out-dir pkg', 'status error');
-          output.setValue(String(err && err.message ? err.message : err));
+          setOutputText(String(err && err.message ? err.message : err), 'source');
         }
       }
 
@@ -758,14 +1113,14 @@
               });
           const report = JSON.parse(rawReport);
           if (report.ok) {
-            output.setValue(report.output || '');
+            setOutputText(report.output || '', 'auto');
             setStatus('Done', 'status ok');
           } else {
             showReasoningError(report);
             setStatus('Syntax error', 'status error');
           }
         } catch (err) {
-          output.setValue(String(err && err.message ? err.message : err));
+          setOutputText(String(err && err.message ? err.message : err), 'source');
           clearErrorHighlight();
           setStatus('Error', 'status error');
         } finally {
@@ -781,6 +1136,20 @@
         clearErrorHighlight();
         if (data.getValue().trim()) setExampleMarker('', '');
       });
+
+      if (outputRenderedTab) outputRenderedTab.addEventListener('click', () => setOutputView('rendered'));
+      if (outputSourceTab) outputSourceTab.addEventListener('click', () => setOutputView('source'));
+      output.on('change', () => {
+        syncRenderedOutput();
+        if (outputMarkdownAutoDetect) {
+          const markdownMode = isLikelyMarkdownOutput(output.getValue());
+          if (markdownMode !== outputMarkdownMode) {
+            setOutputMarkdownMode(markdownMode);
+            setOutputView(markdownMode ? 'rendered' : 'source');
+          }
+        }
+      });
+      setOutputText('(no output yet)', 'source');
 
       runButton.addEventListener('click', run);
       copyShareLinkButton.addEventListener('click', copyShareLink);
