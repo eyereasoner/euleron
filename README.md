@@ -49,6 +49,8 @@ target/release/eyeron
 
 ## Browser playground
 
+Try it online: <https://eyereasoner.github.io/eyeron/playground>
+
 A browser playground is included as `playground.html`. It uses the same Rust reasoner through WebAssembly. Build the browser package and serve the repository directory over HTTP:
 
 ```bash
@@ -58,7 +60,7 @@ python3 -m http.server
 
 The release build config enables the WebAssembly features used by Rust during `wasm-opt` optimization (`bulk-memory` and nontrapping float-to-int conversions). If you use a very old Binaryen/wasm-opt, update `wasm-pack`/Binaryen first.
 
-Then open `http://localhost:8000/playground.html`. The playground supports normal N3 reasoning, `-p`-style proof output, and `-r`-style RDF/TriG compatibility by loading RDF/TriG data into the optional data editor and N3 rules or queries into the program editor.
+Then open `http://localhost:8000/playground.html`. The playground supports normal N3 reasoning, `-p`-style proof output, `-r`-style RDF/TriG compatibility, bundled example loading from `examples/`, and copyable share links.
 
 ## Command-line use
 

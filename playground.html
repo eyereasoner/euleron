@@ -67,6 +67,10 @@
       select { border: 1px solid #d1d5db; padding: 0.45rem 0.8rem; background: #fff; }
       label.toggle { display: inline-flex; gap: 0.4rem; align-items: center; color: #374151; font-size: 0.9rem; user-select: none; }
       .status { color: #6b7280; font-size: 0.85rem; flex: 1 1 16rem; }
+      .example-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.85rem; }
+      .example-row label { font-weight: 650; color: #374151; }
+      .example-row select { flex: 1 1 18rem; min-width: 14rem; }
+      .share-status { flex: 1 1 14rem; }
       .hint { color: #6b7280; font-size: 0.85rem; margin-top: 0.7rem; line-height: 1.45; }
       .hint code { background: #f3f4f6; padding: 0.1rem 0.25rem; border-radius: 0.3rem; }
       .error { color: #b91c1c; }
@@ -90,6 +94,12 @@
 
       <section class="grid">
         <div class="card">
+          <div class="example-row">
+            <label for="examples">Load example</label>
+            <select id="examples" aria-label="Load a bundled example">
+              <option value="">Choose an example…</option>
+            </select>
+          </div>
           <h2 class="section-title">Rules / program</h2>
           <textarea id="input" spellcheck="false"></textarea>
           <div class="data-editor" style="margin-top:0.8rem">
@@ -98,7 +108,8 @@
           </div>
           <div class="controls">
             <button id="run">Run reasoning</button>
-            <button id="example" class="secondary">Load example</button>
+            <button id="example" class="secondary">Reset example</button>
+            <button id="copy-share-link" class="secondary" type="button">Copy share link</button>
             <label class="toggle"><input id="proof" type="checkbox" /> proof</label>
             <label class="toggle"><input id="rdf" type="checkbox" /> RDF/TriG</label>
             <select id="rdf-format" title="RDF format used when RDF/TriG mode is enabled">
@@ -108,6 +119,7 @@
               <option value="ntriples">N-Triples</option>
               <option value="nquads">N-Quads</option>
             </select>
+            <span id="share-status" class="status share-status"></span>
             <span id="status" class="status">Loading wasm module…</span>
           </div>
           <p class="hint">
@@ -128,6 +140,74 @@
       const defaultProgram = `@prefix : <http://example.org/#> .\n\n:Socrates a :Man .\n\n{\n  ?x a :Man .\n} => {\n  ?x a :Mortal .\n} .\n`;
       const trigExample = `PREFIX : <http://example.org/#>\n\n:g { :s :p :o }\n`;
       const queryExample = `@prefix log: <http://www.w3.org/2000/10/swap/log#>.\nPREFIX : <http://example.org/#>\n\n{ ?S ?P ?O } log:query { ?S ?P ?O }.\n`;
+      const bundledExamples = [
+        "alignment-demo.n3",
+        "alma-rdf-messages.n3",
+        "backward.n3",
+        "cat-koko.n3",
+        "collection.n3",
+        "composition-of-injective-functions-is-injective.n3",
+        "constructor-theory-becoming.n3",
+        "control-system-becoming.n3",
+        "deep-taxonomy-10.n3",
+        "deep-taxonomy-100.n3",
+        "deep-taxonomy-1000.n3",
+        "deep-taxonomy-10000.n3",
+        "deep-taxonomy-100000.n3",
+        "derived-backward-rule-2.n3",
+        "derived-backward-rule.n3",
+        "derived-rule.n3",
+        "developmental-genetics-becoming.n3",
+        "dining-philosophers.n3",
+        "dog.n3",
+        "dpv-odrl-purpose-mapping.n3",
+        "engineering-becoming.n3",
+        "equals.n3",
+        "equivalence-classes-overlap-implies-same-class.n3",
+        "existential-rule.n3",
+        "expression-eval.n3",
+        "family-cousins.n3",
+        "good-cobbler.n3",
+        "gray-code-counter.n3",
+        "greatest-lower-bound-uniqueness.n3",
+        "group-inverse-uniqueness.n3",
+        "hanoi.n3",
+        "knowledge-engineering-alignment-flow.n3",
+        "list-builtins-tests.n3",
+        "list-iterate.n3",
+        "list-map.n3",
+        "log-collect-all-in.n3",
+        "log-conclusion.n3",
+        "log-for-all-in.n3",
+        "log-not-includes.n3",
+        "log-uri.n3",
+        "minimal-skos-alignment.n3",
+        "monkey.n3",
+        "monoid-identity-uniqueness.n3",
+        "patch.n3",
+        "pillar.n3",
+        "quoted-head-unquote-select.n3",
+        "quoted-head-unquote.n3",
+        "rdf-list.n3",
+        "rdf-message-cold-chain-recall.n3",
+        "rdf-message-flow.n3",
+        "rdf-message-ldes-incremental.n3",
+        "rdf-message-microgrid.n3",
+        "rdf-message-window-repair.n3",
+        "rdf-messages.n3",
+        "reordering.n3",
+        "rule-matching.n3",
+        "schema-foaf-mapping.n3",
+        "similar.n3",
+        "socrates.n3",
+        "string-builtins-tests.n3",
+        "time.n3",
+        "transitive-closure.n3",
+        "void.n3",
+        "vulnerability-impact.n3",
+        "whitehead-becoming.n3",
+        "witch.n3"
+];
 
       const input = CodeMirror.fromTextArea(document.getElementById('input'), {
         mode: 'turtle',
@@ -153,20 +233,176 @@
 
       const runButton = document.getElementById('run');
       const exampleButton = document.getElementById('example');
+      const exampleSelect = document.getElementById('examples');
+      const copyShareLinkButton = document.getElementById('copy-share-link');
       const proofCheckbox = document.getElementById('proof');
       const rdfCheckbox = document.getElementById('rdf');
       const rdfFormatSelect = document.getElementById('rdf-format');
       const status = document.getElementById('status');
+      const shareStatus = document.getElementById('share-status');
       const version = document.getElementById('version');
 
-      input.setValue(localStorage.getItem('eyeron.playground.input') || defaultProgram);
-      data.setValue(localStorage.getItem('eyeron.playground.data') || '');
-      proofCheckbox.checked = localStorage.getItem('eyeron.playground.proof') === '1';
-      rdfCheckbox.checked = localStorage.getItem('eyeron.playground.rdf') === '1';
-      rdfFormatSelect.value = localStorage.getItem('eyeron.playground.rdfFormat') || 'auto';
-
       let eyeronModule = null;
+      let currentExample = '';
+      let currentExampleText = '';
       runButton.disabled = true;
+
+      function exampleUrl(name) {
+        return new URL('examples/' + encodeURIComponent(name), window.location.href).toString();
+      }
+
+      function populateExamples() {
+        exampleSelect.innerHTML = '<option value="">Choose an example…</option>';
+        for (const name of bundledExamples) {
+          const option = document.createElement('option');
+          option.value = name;
+          option.textContent = name;
+          exampleSelect.appendChild(option);
+        }
+      }
+
+      function setStatus(message, className = 'status') {
+        status.textContent = message;
+        status.className = className;
+      }
+
+      function setShareStatus(message, className = 'status share-status') {
+        shareStatus.textContent = message;
+        shareStatus.className = className;
+      }
+
+      function setExampleMarker(name, text) {
+        currentExample = name || '';
+        currentExampleText = text || '';
+        exampleSelect.value = currentExample;
+      }
+
+      async function loadExample(name) {
+        if (!name) return;
+        setStatus('Loading example…');
+        const response = await fetch(exampleUrl(name), { cache: 'no-store' });
+        if (!response.ok) throw new Error('Could not load examples/' + name + ' (' + response.status + ')');
+        const text = await response.text();
+        input.setValue(text);
+        data.setValue('');
+        setExampleMarker(name, text);
+        setStatus('Loaded examples/' + name, 'status ok');
+        localStorage.setItem('eyeron.playground.example', name);
+        localStorage.setItem('eyeron.playground.input', text);
+        localStorage.setItem('eyeron.playground.data', '');
+      }
+
+      function base64UrlEncode(text) {
+        const bytes = new TextEncoder().encode(text);
+        let binary = '';
+        const chunkSize = 0x8000;
+        for (let i = 0; i < bytes.length; i += chunkSize) {
+          binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+        }
+        return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
+      }
+
+      function base64UrlDecode(text) {
+        const padded = text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (text.length % 4)) % 4);
+        const binary = atob(padded);
+        const bytes = new Uint8Array(binary.length);
+        for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+        return new TextDecoder().decode(bytes);
+      }
+
+      function readShareState() {
+        const hash = window.location.hash || '';
+        const match = hash.match(/^#state=([^&]+)/);
+        if (!match) return null;
+        try {
+          return JSON.parse(base64UrlDecode(match[1]));
+        } catch (err) {
+          console.warn('Ignoring invalid playground share state', err);
+          return null;
+        }
+      }
+
+      function currentStateForShare() {
+        const program = input.getValue();
+        const facts = data.getValue();
+        const state = {
+          v: 1,
+          proof: proofCheckbox.checked,
+          rdf: rdfCheckbox.checked,
+          format: rdfFormatSelect.value,
+        };
+        if (currentExample && program === currentExampleText && !facts.trim()) {
+          state.example = currentExample;
+        } else {
+          state.input = program;
+          state.data = facts;
+        }
+        return state;
+      }
+
+      function playgroundShareUrl() {
+        const url = new URL(window.location.href);
+        if (url.pathname.endsWith('/playground.html')) {
+          url.pathname = url.pathname.replace(/playground\.html$/, 'playground');
+        }
+        url.search = '';
+        url.hash = 'state=' + base64UrlEncode(JSON.stringify(currentStateForShare()));
+        return url.toString();
+      }
+
+      async function copyShareLink() {
+        const url = playgroundShareUrl();
+        try {
+          if (navigator.clipboard && navigator.clipboard.writeText) {
+            await navigator.clipboard.writeText(url);
+          } else {
+            const temporary = document.createElement('textarea');
+            temporary.value = url;
+            temporary.setAttribute('readonly', '');
+            temporary.style.position = 'fixed';
+            temporary.style.left = '-9999px';
+            document.body.appendChild(temporary);
+            temporary.select();
+            document.execCommand('copy');
+            document.body.removeChild(temporary);
+          }
+          setShareStatus('Share link copied.', 'status share-status ok');
+        } catch (err) {
+          setShareStatus('Could not copy; link is in the address bar.', 'status share-status error');
+          window.location.hash = new URL(url).hash;
+        }
+      }
+
+      async function restoreInitialState() {
+        populateExamples();
+        const shared = readShareState();
+        if (shared) {
+          proofCheckbox.checked = !!shared.proof;
+          rdfCheckbox.checked = !!shared.rdf;
+          rdfFormatSelect.value = shared.format || 'auto';
+          if (shared.example) {
+            await loadExample(shared.example);
+          } else {
+            input.setValue(typeof shared.input === 'string' ? shared.input : defaultProgram);
+            data.setValue(typeof shared.data === 'string' ? shared.data : '');
+            setExampleMarker('', '');
+          }
+          setShareStatus('Loaded shared playground state.');
+          return;
+        }
+
+        const savedInput = localStorage.getItem('eyeron.playground.input');
+        const savedData = localStorage.getItem('eyeron.playground.data');
+        input.setValue(savedInput || defaultProgram);
+        data.setValue(savedData || '');
+        proofCheckbox.checked = localStorage.getItem('eyeron.playground.proof') === '1';
+        rdfCheckbox.checked = localStorage.getItem('eyeron.playground.rdf') === '1';
+        rdfFormatSelect.value = localStorage.getItem('eyeron.playground.rdfFormat') || 'auto';
+        const savedExample = localStorage.getItem('eyeron.playground.example') || '';
+        if (savedExample && savedInput) {
+          setExampleMarker(savedExample, savedInput);
+        }
+      }
 
       async function loadEyeron() {
         try {
@@ -174,13 +410,11 @@
           await mod.default();
           eyeronModule = mod;
           version.textContent = mod.version ? `v${mod.version()}` : 'loaded';
-          status.textContent = 'Ready';
-          status.className = 'status ok';
+          setStatus('Ready', 'status ok');
           runButton.disabled = false;
         } catch (err) {
           version.textContent = 'not loaded';
-          status.textContent = 'Build the wasm package first: wasm-pack build --target web --out-dir pkg';
-          status.className = 'status error';
+          setStatus('Build the wasm package first: wasm-pack build --target web --out-dir pkg', 'status error');
           output.setValue(String(err && err.message ? err.message : err));
         }
       }
@@ -192,10 +426,10 @@
         localStorage.setItem('eyeron.playground.proof', proofCheckbox.checked ? '1' : '0');
         localStorage.setItem('eyeron.playground.rdf', rdfCheckbox.checked ? '1' : '0');
         localStorage.setItem('eyeron.playground.rdfFormat', rdfFormatSelect.value);
+        localStorage.setItem('eyeron.playground.example', currentExample || '');
 
         runButton.disabled = true;
-        status.textContent = 'Running…';
-        status.className = 'status';
+        setStatus('Running…');
         try {
           await new Promise(requestAnimationFrame);
           const result = eyeronModule.reasonWithData(
@@ -206,26 +440,41 @@
             rdfFormatSelect.value,
           );
           output.setValue(result || '');
-          status.textContent = 'Done';
-          status.className = 'status ok';
+          setStatus('Done', 'status ok');
         } catch (err) {
           output.setValue(String(err && err.message ? err.message : err));
-          status.textContent = 'Error';
-          status.className = 'status error';
+          setStatus('Error', 'status error');
         } finally {
           runButton.disabled = false;
         }
       }
 
+      input.on('change', () => {
+        if (currentExample && input.getValue() !== currentExampleText) setExampleMarker('', '');
+      });
+      data.on('change', () => {
+        if (data.getValue().trim()) setExampleMarker('', '');
+      });
+
       runButton.addEventListener('click', run);
+      copyShareLinkButton.addEventListener('click', copyShareLink);
+      exampleSelect.addEventListener('change', async () => {
+        try {
+          await loadExample(exampleSelect.value);
+        } catch (err) {
+          setStatus(String(err && err.message ? err.message : err), 'status error');
+        }
+      });
       exampleButton.addEventListener('click', () => {
         if (rdfCheckbox.checked) {
           data.setValue(trigExample);
           input.setValue(queryExample);
           rdfFormatSelect.value = 'trig';
+          setExampleMarker('', '');
         } else {
           data.setValue('');
           input.setValue(defaultProgram);
+          setExampleMarker('', '');
         }
       });
       rdfCheckbox.addEventListener('change', () => {
@@ -233,9 +482,11 @@
           data.setValue(trigExample);
           input.setValue(queryExample);
           rdfFormatSelect.value = 'trig';
+          setExampleMarker('', '');
         }
       });
 
+      await restoreInitialState();
       loadEyeron();
     </script>
   </body>
