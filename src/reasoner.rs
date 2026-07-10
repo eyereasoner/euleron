@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::ast::*;
 use crate::parser::parse_n3;
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -1978,12 +1980,12 @@ fn sha1_hex(data: &[u8]) -> String {
         }
         for i in 16..80 { w[i] = (w[i-3] ^ w[i-8] ^ w[i-14] ^ w[i-16]).rotate_left(1); }
         let (mut a, mut b, mut c, mut d, mut e) = (h0, h1, h2, h3, h4);
-        for i in 0..80 {
+        for (i, &word) in w.iter().enumerate() {
             let (f, k) = if i < 20 { ((b & c) | ((!b) & d), 0x5A827999) }
                 else if i < 40 { (b ^ c ^ d, 0x6ED9EBA1) }
                 else if i < 60 { ((b & c) | (b & d) | (c & d), 0x8F1BBCDC) }
                 else { (b ^ c ^ d, 0xCA62C1D6) };
-            let temp = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(w[i]);
+            let temp = a.rotate_left(5).wrapping_add(f).wrapping_add(e).wrapping_add(k).wrapping_add(word);
             e = d; d = c; c = b.rotate_left(30); b = a; a = temp;
         }
         h0 = h0.wrapping_add(a); h1 = h1.wrapping_add(b); h2 = h2.wrapping_add(c); h3 = h3.wrapping_add(d); h4 = h4.wrapping_add(e);
@@ -2204,7 +2206,7 @@ fn eval_list_sort(left: &Term, right: &Term, bindings: &Bindings, facts: &[Tripl
         .or_else(|| rdf_or_native_list(right, bindings, facts).map(|items| (items, false)));
     let Some((mut items, left_was_input)) = input else { return Vec::new(); };
     if !items.iter().all(Term::is_ground) { return Vec::new(); }
-    items.sort_by(|a, b| term_sort_key(a).cmp(&term_sort_key(b)));
+    items.sort_by_key(term_sort_key);
     let mut out = bindings.clone();
     let ok = if left_was_input {
         unify_listish(right, items, &mut out, facts)
@@ -2780,7 +2782,7 @@ fn simple_format(fmt: &str, args: &[String]) -> Option<String> {
             if rendered.len() < w {
                 let pad = w - rendered.len();
                 let pad_ch = if zero && !left { '0' } else { ' ' };
-                let padding: String = std::iter::repeat(pad_ch).take(pad).collect();
+                let padding: String = std::iter::repeat_n(pad_ch, pad).collect();
                 if left { rendered.push_str(&padding); } else { rendered = format!("{}{}", padding, rendered); }
             }
         }

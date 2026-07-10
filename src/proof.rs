@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use crate::ast::*;
 use crate::printing::{term_to_n3_object, triple_to_n3};
 use crate::reasoner::{find_backward_proof_for_goal, DerivedFact, ProofNode, ReasonerResult};

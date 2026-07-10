@@ -26,10 +26,9 @@ fn run() -> io::Result<()> {
     match status {
         Ok(status) if status.success() => {}
         Ok(status) => {
-            return Err(io::Error::new(
-                io::ErrorKind::Other,
-                format!("wasm-pack exited with status {status}"),
-            ));
+            return Err(io::Error::other(format!(
+                "wasm-pack exited with status {status}"
+            )));
         }
         Err(err) if err.kind() == io::ErrorKind::NotFound => {
             return Err(io::Error::new(

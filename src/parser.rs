@@ -183,7 +183,7 @@ fn rewrite_message_blank_labels(message: &str, message_index: usize) -> String {
 
         if ch == '#' {
             out.push(ch);
-            while let Some((_j, c)) = chars.next() {
+            for (_j, c) in chars.by_ref() {
                 out.push(c);
                 if c == '\n' { break; }
             }
@@ -591,29 +591,24 @@ impl Parser {
                         let subject = Term::formula(lhs);
                         let mut triples = Vec::new();
                         loop {
-                            loop {
-                                let (object, mut generated) = self.parse_term()?;
-                                triples.push(Triple::new(subject.clone(), other.clone(), object));
-                                triples.append(&mut generated);
-                                if self.check(&TokenKind::Comma) { self.advance(); continue; }
-                                break;
-                            }
-                            if self.check(&TokenKind::Semicolon) {
-                                while self.check(&TokenKind::Semicolon) { self.advance(); }
-                                if matches!(self.peek_kind(), TokenKind::Dot | TokenKind::RBrace | TokenKind::RBracket) { break; }
+                            let (object, mut generated) = self.parse_term()?;
+                            triples.push(Triple::new(subject.clone(), other.clone(), object));
+                            triples.append(&mut generated);
+                            if self.check(&TokenKind::Comma) { self.advance(); continue; }
+                            break;
+                        }
+                        if self.check(&TokenKind::Semicolon) {
+                            while self.check(&TokenKind::Semicolon) { self.advance(); }
+                            if !matches!(self.peek_kind(), TokenKind::Dot | TokenKind::RBrace | TokenKind::RBracket) {
                                 let next_pred = self.parse_verb()?;
-                                let mut more = Vec::new();
                                 loop {
                                     let (object, mut generated) = self.parse_term()?;
-                                    more.push(Triple::new(subject.clone(), next_pred.clone(), object));
-                                    more.append(&mut generated);
+                                    triples.push(Triple::new(subject.clone(), next_pred.clone(), object));
+                                    triples.append(&mut generated);
                                     if self.check(&TokenKind::Comma) { self.advance(); continue; }
                                     break;
                                 }
-                                triples.extend(more);
-                                break;
                             }
-                            break;
                         }
                         self.add_facts(triples, source.clone());
                     }
@@ -1025,10 +1020,10 @@ impl Parser {
                 lit.language = Some(lang);
             }
         }
-        if self.profile.is_rdf12() {
-            if matches!(self.peek_kind(), TokenKind::PName(p) if p == "--ltr" || p == "--rtl") {
-                return Err(EyeronError::at("base direction requires a language tag", self.peek().offset));
-            }
+        if self.profile.is_rdf12()
+            && matches!(self.peek_kind(), TokenKind::PName(p) if p == "--ltr" || p == "--rtl")
+        {
+            return Err(EyeronError::at("base direction requires a language tag", self.peek().offset));
         }
         Ok((Term::Literal(lit), Vec::new()))
     }
@@ -1378,8 +1373,8 @@ fn remove_dot_segments(path: &str) -> String {
         }
         else if input == "." || input == ".." { input.clear(); }
         else {
-            let n = if input.starts_with('/') {
-                input[1..].find('/').map(|idx| idx + 1).unwrap_or(input.len())
+            let n = if let Some(stripped) = input.strip_prefix('/') {
+                stripped.find('/').map(|idx| idx + 1).unwrap_or(input.len())
             } else {
                 input.find('/').unwrap_or(input.len())
             };
