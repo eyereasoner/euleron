@@ -80,18 +80,17 @@ cargo run -- --help
 cargo run -- --version
 ```
 
-For RDF 1.2 syntax-manifest work, the CLI also exposes an inspection-oriented parse mode over the same lexer/parser used by N3:
+RDF-compatible input is selected by file extension. Eyeron recognizes `.ttl`, `.nt`, `.nq`, and `.trig`; standard input can be parsed as Turtle with `--rdf`:
 
 ```bash
-cargo run -- --rdf12-json --rdf12-format turtle --base-iri https://example.org/base - < input.ttl
-cargo run -- --rdf12-json --rdf12-format n-triples - < input.nt
-cargo run -- --rdf12-json --rdf12-format n-quads - < input.nq
-cargo run -- --rdf12-json --rdf12-format trig - < input.trig
+cargo run -- input.ttl
+cargo run -- input.nt
+cargo run -- input.nq
+cargo run -- input.trig
+cargo run -- --rdf --base-iri https://example.org/base - < input.ttl
 ```
 
-`--rdf12-json` emits machine-readable JSON quads for parser inspection. This mode is intended for conformance development and shares Eyeron's lexer, term parser, directive handling, list parser, blank-node property-list parser, and quoted-triple/formula representation with ordinary N3 parsing.
-
-The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
+The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 
@@ -324,7 +323,7 @@ src/
   lexer.rs      Tokenizer
   parser.rs     Shared N3/RDF 1.2 parser profiles
   reasoner.rs   Rule engine and built-ins
-  printing.rs   N3/debug output and RDF 1.2 JSON adapter output
+  printing.rs   N3/debug output and RDF 1.2 JSON adapter output used by tests
   main.rs       CLI entry point
 examples/       Example N3 inputs
 examples/output Golden outputs used by cargo test

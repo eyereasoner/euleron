@@ -1,6 +1,6 @@
 use eyeron::error::{EyeronError, Result};
 use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, RdfFormat};
-use eyeron::printing::{document_debug, rdf12_json, result_to_string};
+use eyeron::printing::{document_debug, result_to_string};
 use eyeron::proof::proof_to_n3;
 use eyeron::reasoner::{reason, ReasonerOptions};
 use eyeron::Document;
@@ -18,8 +18,6 @@ struct CliOptions {
     rdf: bool,
     stream: bool,
     stream_messages: bool,
-    rdf12_json: bool,
-    rdf12_format: Option<RdfFormat>,
     base_iri: Option<String>,
     files: Vec<String>,
 }
@@ -34,10 +32,6 @@ fn main() {
 fn run() -> Result<()> {
     let opt = parse_args(env::args().skip(1).collect())?;
 
-    if opt.rdf {
-        // RDF compatibility mode is accepted.  Files using VERSION "1.2-messages"
-        // are replayed as RDF Message Logs; other files use the N3/Turtle subset parser.
-    }
     if opt.stream {
         eprintln!("warning: --stream is accepted; Eyeron currently emits after the fixpoint is reached");
     }
@@ -49,10 +43,10 @@ fn run() -> Result<()> {
     for (label, text) in &sources {
         let path_base = if label == "<stdin>" { None } else { path_to_file_iri(label).ok() };
         let base = opt.base_iri.as_deref().or(path_base.as_deref());
-        let parsed = if opt.rdf12_json {
-            parse_rdf12(text, base, opt.rdf12_format.unwrap_or(RdfFormat::Turtle))
-        } else if is_rdf_message_log(text) {
+        let parsed = if is_rdf_message_log(text) {
             parse_rdf_message_log(text, base)
+        } else if let Some(format) = rdf_format_for_source(label, opt.rdf)? {
+            parse_rdf12(text, base, format)
         } else if opt.proof {
             parse_n3_with_source(text, base, Some(label))
         } else {
@@ -62,11 +56,6 @@ fn run() -> Result<()> {
             Ok(doc) => merged.merge(doc),
             Err(err) => return Err(EyeronError::new(err.with_source_location(text, label))),
         }
-    }
-
-    if opt.rdf12_json {
-        print!("{}", rdf12_json(&merged));
-        return Ok(());
     }
 
     if opt.ast {
@@ -100,7 +89,7 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             "-a" | "--ast" => opt.ast = true,
             "-p" | "--proof" | "--proof-comments" => opt.proof = true,
             "-r" | "--rdf" => opt.rdf = true,
-            "-t" | "--stream" => opt.stream = true,
+            "-s" | "--stream" => opt.stream = true,
             "--builtin" | "--store" | "--store-path" => {
                 let flag = args[i].clone();
                 i += 1;
@@ -108,15 +97,6 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Eyeron", flag);
             }
             "--stream-messages" => opt.stream_messages = true,
-            "--rdf12-json" => opt.rdf12_json = true,
-            "--rdf12-format" => {
-                i += 1;
-                if i >= args.len() { return Err(EyeronError::new("--rdf12-format requires a value")); }
-                opt.rdf12_format = RdfFormat::parse(&args[i]);
-                if opt.rdf12_format.is_none() {
-                    return Err(EyeronError::new(format!("unknown RDF 1.2 format {}", args[i])));
-                }
-            }
             "--base-iri" | "--base" => {
                 i += 1;
                 if i >= args.len() { return Err(EyeronError::new(format!("{} requires a value", args[i - 1]))); }
@@ -133,6 +113,28 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
         i += 1;
     }
     Ok(opt)
+}
+
+fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat>> {
+    if label == "<stdin>" {
+        return Ok(if rdf_mode { Some(RdfFormat::Turtle) } else { None });
+    }
+
+    let extension = Path::new(label)
+        .extension()
+        .and_then(|ext| ext.to_str())
+        .map(str::to_ascii_lowercase);
+    let format = extension.as_deref().and_then(RdfFormat::parse);
+
+    match (format, extension.as_deref(), rdf_mode) {
+        (Some(format), _, _) => Ok(Some(format)),
+        (None, Some("n3"), _) => Ok(None),
+        (None, _, true) => Err(EyeronError::new(format!(
+            "cannot infer RDF format for {}; use .ttl, .nt, .nq, .trig, or .n3",
+            label
+        ))),
+        (None, _, false) => Ok(None),
+    }
 }
 
 fn read_sources(files: &[String]) -> Result<Vec<(String, String)>> {
@@ -175,16 +177,14 @@ fn percent_encode_path(path: &str) -> String {
 fn print_help() {
     println!("eyeron {}", VERSION);
     println!();
-    println!("Usage: eyeron [options] [file.n3|- ...]");
+    println!("Usage: eyeron [options] [file.n3|file.ttl|file.nt|file.nq|file.trig|- ...]");
     println!();
     println!("Options:");
     println!("  -a, --ast                     Print parsed AST/debug form and exit");
     println!("  -p, --proof                   Enable N3 proof explanations");
-    println!("  -r, --rdf                     Enable RDF-compatible input mode; RDF Message Logs are replayed");
-    println!("  -t, --stream                  Output is emitted after fixpoint");
+    println!("  -r, --rdf                     Parse stdin as Turtle or require RDF file extensions");
+    println!("  -s, --stream                  Output is emitted after fixpoint");
     println!("      --stream-messages         RDF Message Log input with VERSION/MESSAGE delimiters");
-    println!("      --rdf12-json              Parse RDF 1.2 syntax and emit JSON quads");
-    println!("      --rdf12-format FORMAT     RDF 1.2 format: turtle, n-triples, n-quads, or trig");
     println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");
     println!("  -v, --version                 Print version");
     println!("  -h, --help                    Show this help");

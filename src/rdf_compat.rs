@@ -17,7 +17,7 @@ pub enum RdfFormat {
 
 impl RdfFormat {
     pub fn parse(value: &str) -> Option<Self> {
-        match value {
+        match value.to_ascii_lowercase().as_str() {
             "turtle" | "ttl" => Some(Self::Turtle),
             "n-triples" | "ntriples" | "nt" => Some(Self::NTriples),
             "n-quads" | "nquads" | "nq" => Some(Self::NQuads),
