@@ -788,7 +788,9 @@ fn match_premise_remaining(
     // them before a neighbouring list:iterate/fact goal can lose the chance to
     // bind the variables needed by later tests.
     for (idx, premise) in premises.iter().enumerate() {
-        if premise_is_speculative_builtin(premise, &bindings) {
+        if premise_is_speculative_builtin(premise, &bindings)
+            || aggregate_waits_for_sibling_binding(premise, &premises, idx, &bindings)
+        {
             continue;
         }
         let candidates = match_one_premise(premise, facts, fact_index, rules, &bindings, depth, backward_stack, budget, false);
@@ -812,6 +814,9 @@ fn match_premise_remaining(
 
     if best_index.is_none() {
         for (idx, premise) in premises.iter().enumerate() {
+            if aggregate_waits_for_sibling_binding(premise, &premises, idx, &bindings) {
+                continue;
+            }
             let candidates = match_one_premise(premise, facts, fact_index, rules, &bindings, depth, backward_stack, budget, true);
             if candidates.is_empty() { continue; }
             if best_index.is_none() || candidates.len() < best_candidates.len() {
@@ -829,6 +834,81 @@ fn match_premise_remaining(
     }
 }
 
+
+
+fn aggregate_waits_for_sibling_binding(
+    premise: &Triple,
+    all_premises: &[Triple],
+    premise_index: usize,
+    bindings: &Bindings,
+) -> bool {
+    let pred = resolve(&premise.p, bindings);
+    let Term::Iri(iri) = pred else { return false; };
+    if !matches!(iri.as_str(), LOG_COLLECT_ALL_IN | LOG_FOR_ALL_IN) {
+        return false;
+    }
+
+    // Aggregates such as log:collectAllIn have two kinds of variables in their
+    // scoped formula: variables local to the aggregate, and variables supplied
+    // by neighbouring rule premises.  The matcher is allowed to reorder rule
+    // bodies for performance, but it must not run an aggregate before those
+    // neighbouring context variables are bound.  Otherwise a rule like dog.n3
+    // counts all dogs globally and later binds both :alice and :bob.
+    let subject = resolve(&premise.s, bindings);
+    let Term::List(parts) = subject else { return false; };
+
+    let mut aggregate_formula_vars = HashSet::<String>::new();
+    match iri.as_str() {
+        LOG_COLLECT_ALL_IN if parts.len() == 3 => {
+            if let Term::Formula(clause) = &parts[1] {
+                for triple in clause {
+                    collect_var_names_triple(triple, &mut aggregate_formula_vars);
+                }
+            }
+        }
+        LOG_FOR_ALL_IN if parts.len() == 2 => {
+            for part in &parts {
+                if let Term::Formula(clause) = part {
+                    for triple in clause {
+                        collect_var_names_triple(triple, &mut aggregate_formula_vars);
+                    }
+                }
+            }
+        }
+        _ => return false,
+    }
+
+    if aggregate_formula_vars.is_empty() {
+        return false;
+    }
+
+    let mut sibling_vars = HashSet::<String>::new();
+    for (idx, other) in all_premises.iter().enumerate() {
+        if idx == premise_index {
+            continue;
+        }
+        collect_sibling_context_var_names(other, bindings, &mut sibling_vars);
+    }
+
+    aggregate_formula_vars
+        .into_iter()
+        .any(|var| sibling_vars.contains(&var) && !bindings.contains_key(&var))
+}
+
+fn collect_sibling_context_var_names(triple: &Triple, bindings: &Bindings, out: &mut HashSet<String>) {
+    let pred = resolve(&triple.p, bindings);
+    if matches!(pred, Term::Iri(ref iri) if matches!(iri.as_str(), LOG_COLLECT_ALL_IN | LOG_FOR_ALL_IN)) {
+        // Do not treat variables inside a sibling aggregate's own scoped
+        // formula as context variables.  In log-collect-all-in.n3 several
+        // independent collectAllIn calls all use ?param as a local aggregate
+        // variable; making each aggregate wait for the others deadlocks the
+        // rule body.  Only ordinary sibling premises can provide the external
+        // context that an aggregate must wait for, as in dog.n3 where
+        // ?Subject is first bound by `?Subject :hasDog ?Any`.
+        return;
+    }
+    collect_var_names_triple(triple, out);
+}
 
 fn premise_is_speculative_builtin(premise: &Triple, bindings: &Bindings) -> bool {
     let pred = resolve(&premise.p, bindings);

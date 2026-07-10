@@ -304,6 +304,17 @@ fn existential_rule_still_introduces_distinct_blank_nodes() {
 }
 
 #[test]
+fn dog_license_collect_all_is_scoped_by_subject() {
+    let out = reason(include_str!("../examples/dog.n3")).unwrap();
+    assert!(out.contains(":alice :mustHave :dogLicense"), "{}", out);
+    assert!(
+        !out.contains(":bob :mustHave :dogLicense"),
+        "log:collectAllIn must count dogs per bound subject, not globally:\n{}",
+        out
+    );
+}
+
+#[test]
 fn collect_all_and_list_builtins_match_golden_lines() {
     let cases = [
         ("dog", include_str!("../examples/dog.n3"), include_str!("../examples/output/dog.n3")),
