@@ -5,6 +5,8 @@ export function reason(input: string): string;
 
 export function reasonWithData(program: string, data: string, proof: boolean, rdf: boolean, rdf_format: string): string;
 
+export function reasonWithDataReport(program: string, data: string, proof: boolean, rdf: boolean, rdf_format: string): string;
+
 export function reasonWithOptions(input: string, proof: boolean, rdf: boolean, rdf_format: string): string;
 
 export function version(): string;
@@ -15,6 +17,7 @@ export interface InitOutput {
     readonly memory: WebAssembly.Memory;
     readonly reason: (a: number, b: number, c: number) => void;
     readonly reasonWithData: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
+    readonly reasonWithDataReport: (a: number, b: number, c: number, d: number, e: number, f: number, g: number, h: number, i: number) => void;
     readonly reasonWithOptions: (a: number, b: number, c: number, d: number, e: number, f: number, g: number) => void;
     readonly version: (a: number) => void;
     readonly __wbindgen_add_to_stack_pointer: (a: number) => number;

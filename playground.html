@@ -75,6 +75,18 @@
       .hint code { background: #f3f4f6; padding: 0.1rem 0.25rem; border-radius: 0.3rem; }
       .error { color: #b91c1c; }
       .ok { color: #047857; }
+      .cm-error-line {
+        background: rgba(239, 68, 68, 0.18) !important;
+      }
+      .CodeMirror-linebackground.cm-error-line {
+        background: rgba(239, 68, 68, 0.18) !important;
+        box-shadow: inset 3px 0 0 rgba(239, 68, 68, 0.65) !important;
+      }
+      .cm-error-token {
+        outline: 1px solid rgba(220, 38, 38, 0.9);
+        background: rgba(239, 68, 68, 0.24);
+      }
+      button.share-gist[hidden] { display: none; }
       @media (max-width: 900px) {
         .grid { grid-template-columns: 1fr; }
         .CodeMirror { min-height: 22rem; }
@@ -110,6 +122,13 @@
             <button id="run">Run reasoning</button>
             <button id="example" class="secondary">Reset example</button>
             <button id="copy-share-link" class="secondary" type="button">Copy share link</button>
+            <button
+              id="create-gist-share"
+              class="secondary share-gist"
+              type="button"
+              hidden
+              title="Store an oversized playground state in a secret GitHub Gist and copy a short stateurl= share link."
+            >Create Gist share</button>
             <label class="toggle"><input id="proof" type="checkbox" /> proof</label>
             <label class="toggle"><input id="rdf" type="checkbox" /> RDF/TriG</label>
             <select id="rdf-format" title="RDF format used when RDF/TriG mode is enabled">
@@ -140,6 +159,11 @@
       const defaultProgram = `@prefix : <http://example.org/#> .\n\n:Socrates a :Man .\n\n{\n  ?x a :Man .\n} => {\n  ?x a :Mortal .\n} .\n`;
       const trigExample = `PREFIX : <http://example.org/#>\n\n:g { :s :p :o }\n`;
       const queryExample = `@prefix log: <http://www.w3.org/2000/10/swap/log#>.\nPREFIX : <http://example.org/#>\n\n{ ?S ?P ?O } log:query { ?S ?P ?O }.\n`;
+      const GIST_SHARE_THRESHOLD = 2000;
+      const GITHUB_GIST_API_TOKEN_KEY = 'eyeron.playground.github.gistToken.v1';
+      const GITHUB_GIST_CREATE_API_URL = 'https://api.github.com/gists';
+      let oversizedStateShareUrlForGist = '';
+
       const bundledExamples = [
         "alignment-demo.n3",
         "alma-rdf-messages.n3",
@@ -235,6 +259,7 @@
       const exampleButton = document.getElementById('example');
       const exampleSelect = document.getElementById('examples');
       const copyShareLinkButton = document.getElementById('copy-share-link');
+      const createGistShareButton = document.getElementById('create-gist-share');
       const proofCheckbox = document.getElementById('proof');
       const rdfCheckbox = document.getElementById('rdf');
       const rdfFormatSelect = document.getElementById('rdf-format');
@@ -271,6 +296,43 @@
         shareStatus.className = className;
       }
 
+      const errorHighlights = [];
+
+      function clearErrorHighlight() {
+        while (errorHighlights.length) {
+          const item = errorHighlights.pop();
+          if (item.lineHandle) item.editor.removeLineClass(item.lineHandle, 'background', 'cm-error-line');
+          if (item.mark) item.mark.clear();
+        }
+      }
+
+      function highlightEditorError(editor, line1, column1) {
+        clearErrorHighlight();
+        const line = Number.isFinite(line1) ? Math.max(0, line1 - 1) : 0;
+        const ch = Number.isFinite(column1) ? Math.max(0, column1 - 1) : 0;
+        if (line < 0 || line >= editor.lineCount()) return;
+        const lineHandle = editor.getLineHandle(line);
+        editor.addLineClass(lineHandle, 'background', 'cm-error-line');
+        const lineText = editor.getLine(line) || '';
+        const to = { line, ch: Math.min(lineText.length, ch + 1) };
+        const mark = editor.markText({ line, ch: Math.min(lineText.length, ch) }, to, { className: 'cm-error-token' });
+        errorHighlights.push({ editor, lineHandle, mark });
+        editor.scrollIntoView({ line, ch }, 90);
+        editor.setCursor({ line, ch });
+        editor.focus();
+      }
+
+      function showReasoningError(report) {
+        const err = report && report.error ? report.error : {};
+        output.setValue(String(err.display || err.message || 'Unknown error'));
+        const editor = err.editor === 'data' ? data : input;
+        if (Number.isFinite(err.line) && err.line > 0) {
+          highlightEditorError(editor, err.line, Number.isFinite(err.column) ? err.column : 1);
+        } else {
+          clearErrorHighlight();
+        }
+      }
+
       function setExampleMarker(name, text) {
         currentExample = name || '';
         currentExampleText = text || '';
@@ -292,8 +354,7 @@
         localStorage.setItem('eyeron.playground.data', '');
       }
 
-      function base64UrlEncode(text) {
-        const bytes = new TextEncoder().encode(text);
+      function bytesToBase64Url(bytes) {
         let binary = '';
         const chunkSize = 0x8000;
         for (let i = 0; i < bytes.length; i += chunkSize) {
@@ -302,24 +363,122 @@
         return btoa(binary).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/g, '');
       }
 
-      function base64UrlDecode(text) {
-        const padded = text.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (text.length % 4)) % 4);
+      function base64UrlToBytes(value) {
+        const padded = String(value || '').replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (String(value || '').length % 4)) % 4);
         const binary = atob(padded);
         const bytes = new Uint8Array(binary.length);
         for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
-        return new TextDecoder().decode(bytes);
+        return bytes;
       }
 
-      function readShareState() {
-        const hash = window.location.hash || '';
-        const match = hash.match(/^#state=([^&]+)/);
-        if (!match) return null;
+      function encodeUtf8(text) {
+        return new TextEncoder().encode(String(text));
+      }
+
+      function decodeUtf8(bytes) {
+        return new TextDecoder('utf-8').decode(bytes);
+      }
+
+      async function gzipText(text) {
+        if (!window.CompressionStream || !window.Response || !window.Blob) return null;
+        const stream = new Blob([String(text)]).stream().pipeThrough(new CompressionStream('gzip'));
+        return new Uint8Array(await new Response(stream).arrayBuffer());
+      }
+
+      async function gunzipText(bytes) {
+        if (!window.DecompressionStream || !window.Response || !window.Blob) {
+          throw new Error('This browser cannot open compressed playground state links.');
+        }
+        const stream = new Blob([bytes]).stream().pipeThrough(new DecompressionStream('gzip'));
+        return new Response(stream).text();
+      }
+
+      function base64UrlEncode(text) {
+        return bytesToBase64Url(encodeUtf8(text));
+      }
+
+      function base64UrlDecode(text) {
+        return decodeUtf8(base64UrlToBytes(text));
+      }
+
+      function compactPlaygroundState(state) {
+        const compact = { v: 1 };
+        if (state.proof) compact.p = true;
+        if (state.rdf) compact.r = true;
+        if (state.format && state.format !== 'auto') compact.f = state.format;
+        if (state.example) compact.x = state.example;
+        if (typeof state.input === 'string') compact.i = state.input;
+        if (typeof state.data === 'string' && state.data) compact.d = state.data;
+        return compact;
+      }
+
+      async function packPlaygroundState(state) {
+        const json = JSON.stringify(compactPlaygroundState(state));
+        const jsonToken = 'j.' + base64UrlEncode(json);
         try {
-          return JSON.parse(base64UrlDecode(match[1]));
+          const gz = await gzipText(json);
+          if (gz) {
+            const gzipToken = 'g.' + bytesToBase64Url(gz);
+            if (gzipToken.length < jsonToken.length) return gzipToken;
+          }
+        } catch (_) {
+          // Fall through to universal JSON payload.
+        }
+        return jsonToken;
+      }
+
+      async function unpackPlaygroundState(token) {
+        const value = String(token || '').trim();
+        if (!value) return null;
+        let json;
+        if (value.startsWith('g.')) json = await gunzipText(base64UrlToBytes(value.slice(2)));
+        else if (value.startsWith('j.')) json = base64UrlDecode(value.slice(2));
+        else json = base64UrlDecode(value);
+        return JSON.parse(json);
+      }
+
+      function normalizePlaygroundState(raw) {
+        if (!raw || typeof raw !== 'object') return null;
+        return {
+          v: raw.v || 1,
+          proof: !!(raw.p ?? raw.proof),
+          rdf: !!(raw.r ?? raw.rdf),
+          format: String(raw.f ?? raw.format ?? 'auto'),
+          example: typeof (raw.x ?? raw.example) === 'string' ? (raw.x ?? raw.example) : '',
+          input: typeof (raw.i ?? raw.input) === 'string' ? (raw.i ?? raw.input) : null,
+          data: typeof (raw.d ?? raw.data) === 'string' ? (raw.d ?? raw.data) : '',
+        };
+      }
+
+      function getShareStateTokenFromLocation() {
+        const url = new URL(window.location.href);
+        return url.searchParams.get('state') || url.searchParams.get('s') || (window.location.hash || '').match(/^#state=([^&]+)/)?.[1] || '';
+      }
+
+      function getStateUrlFromLocation() {
+        const url = new URL(window.location.href);
+        return url.searchParams.get('stateurl') || url.searchParams.get('stateuri') || url.searchParams.get('state-url') || '';
+      }
+
+      async function fetchPlaygroundStateFromUrl(stateUrl) {
+        const url = String(stateUrl || '').trim();
+        if (!url) return null;
+        const res = await fetch(url, { cache: 'no-store', redirect: 'follow', referrerPolicy: 'no-referrer' });
+        if (!res.ok) throw new Error(`HTTP ${res.status} when fetching shared state.`);
+        return JSON.parse(await res.text());
+      }
+
+      async function readShareState() {
+        try {
+          const token = getShareStateTokenFromLocation();
+          if (token) return normalizePlaygroundState(await unpackPlaygroundState(token));
+          const stateUrl = getStateUrlFromLocation();
+          if (stateUrl) return normalizePlaygroundState(await fetchPlaygroundStateFromUrl(stateUrl));
         } catch (err) {
           console.warn('Ignoring invalid playground share state', err);
-          return null;
+          setShareStatus('Could not open shared state: ' + String(err && err.message ? err.message : err), 'status share-status error');
         }
+        return null;
       }
 
       function currentStateForShare() {
@@ -340,42 +499,188 @@
         return state;
       }
 
-      function playgroundShareUrl() {
+      async function playgroundShareUrl() {
         const url = new URL(window.location.href);
         if (url.pathname.endsWith('/playground.html')) {
           url.pathname = url.pathname.replace(/playground\.html$/, 'playground');
         }
-        url.search = '';
-        url.hash = 'state=' + base64UrlEncode(JSON.stringify(currentStateForShare()));
+        for (const name of ['state', 's', 'stateurl', 'stateuri', 'state-url']) url.searchParams.delete(name);
+        url.searchParams.set('state', await packPlaygroundState(currentStateForShare()));
+        url.hash = '';
         return url.toString();
       }
 
-      async function copyShareLink() {
-        const url = playgroundShareUrl();
+      function shareUrlHasEmbeddedState(shareUrl) {
         try {
-          if (navigator.clipboard && navigator.clipboard.writeText) {
-            await navigator.clipboard.writeText(url);
-          } else {
-            const temporary = document.createElement('textarea');
-            temporary.value = url;
-            temporary.setAttribute('readonly', '');
-            temporary.style.position = 'fixed';
-            temporary.style.left = '-9999px';
-            document.body.appendChild(temporary);
-            temporary.select();
-            document.execCommand('copy');
-            document.body.removeChild(temporary);
+          const url = new URL(String(shareUrl || ''), window.location.href);
+          return !!(url.searchParams.get('state') || url.searchParams.get('s') || (url.hash || '').startsWith('#state='));
+        } catch (_) {
+          return false;
+        }
+      }
+
+      function shouldOfferGistShare(shareUrl) {
+        return String(shareUrl || '').length > GIST_SHARE_THRESHOLD && shareUrlHasEmbeddedState(shareUrl);
+      }
+
+      function setShareGistOption(shareUrl) {
+        oversizedStateShareUrlForGist = shouldOfferGistShare(shareUrl) ? String(shareUrl) : '';
+        if (createGistShareButton) {
+          createGistShareButton.hidden = !oversizedStateShareUrlForGist;
+          createGistShareButton.disabled = !oversizedStateShareUrlForGist;
+        }
+      }
+
+      function normalizeGithubGistToken(token) {
+        const value = String(token || '').trim();
+        return value.replace(/^Bearer\s+/i, '');
+      }
+
+      function getGithubGistToken() {
+        let token = '';
+        try {
+          token = localStorage.getItem(GITHUB_GIST_API_TOKEN_KEY) || '';
+        } catch (_) {}
+        token = normalizeGithubGistToken(token);
+        if (token) return token;
+        token = normalizeGithubGistToken(window.prompt('GitHub token with gist scope for creating a secret share gist:') || '');
+        if (token) {
+          try { localStorage.setItem(GITHUB_GIST_API_TOKEN_KEY, token); } catch (_) {}
+        }
+        return token;
+      }
+
+      function rawUrlFromGistApiResponse(payload) {
+        if (!payload || typeof payload !== 'object' || !payload.files) return '';
+        for (const file of Object.values(payload.files)) {
+          if (file && typeof file.raw_url === 'string') return file.raw_url;
+        }
+        return '';
+      }
+
+      function makeShareUrlFromStateUrl(stateUrl) {
+        const url = new URL(window.location.href);
+        if (url.pathname.endsWith('/playground.html')) {
+          url.pathname = url.pathname.replace(/playground\.html$/, 'playground');
+        }
+        for (const name of ['state', 's', 'stateurl', 'stateuri', 'state-url']) url.searchParams.delete(name);
+        url.searchParams.set('stateurl', stateUrl);
+        url.hash = '';
+        return url.toString();
+      }
+
+      async function createGistBackedShareUrl(state, token) {
+        if (!token) throw new Error('GitHub Gist token was not provided.');
+        const content = JSON.stringify(compactPlaygroundState(state), null, 2) + '\n';
+        const res = await fetch(GITHUB_GIST_CREATE_API_URL, {
+          method: 'POST',
+          headers: {
+            Accept: 'application/vnd.github+json',
+            'Content-Type': 'application/json',
+            Authorization: 'Bearer ' + token,
+          },
+          body: JSON.stringify({
+            description: 'Eyeron playground shared state',
+            public: false,
+            files: { 'eyeron-playground-state.json': { content } },
+          }),
+          cache: 'no-store',
+          referrerPolicy: 'no-referrer',
+        });
+        let payload = null;
+        try { payload = await res.json(); } catch (_) {}
+        if (!res.ok) {
+          const detail = payload && typeof payload === 'object' ? String(payload.message || payload.error || '').trim() : '';
+          if (res.status === 401 || res.status === 403) {
+            try { localStorage.removeItem(GITHUB_GIST_API_TOKEN_KEY); } catch (_) {}
           }
-          setShareStatus('Share link copied.', 'status share-status ok');
+          throw new Error(detail || `GitHub Gist API returned HTTP ${res.status}.`);
+        }
+        const rawUrl = rawUrlFromGistApiResponse(payload);
+        if (!rawUrl) throw new Error('GitHub Gist API did not return a raw_url.');
+        return makeShareUrlFromStateUrl(rawUrl);
+      }
+
+      async function copyTextToClipboard(text) {
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(text);
+          return;
+        }
+        const temporary = document.createElement('textarea');
+        temporary.value = text;
+        temporary.setAttribute('readonly', '');
+        temporary.style.position = 'fixed';
+        temporary.style.left = '-9999px';
+        temporary.style.top = '0';
+        document.body.appendChild(temporary);
+        temporary.focus();
+        temporary.select();
+        let ok = false;
+        try { ok = document.execCommand('copy'); } finally { document.body.removeChild(temporary); }
+        if (!ok) throw new Error('Clipboard copy was blocked by the browser.');
+      }
+
+      async function copyShareLink() {
+        copyShareLinkButton.disabled = true;
+        setShareStatus('Creating compact share link…');
+        let url = '';
+        try {
+          url = await playgroundShareUrl();
+          setShareGistOption(url);
+          await copyTextToClipboard(url);
+          setShareStatus(
+            shouldOfferGistShare(url)
+              ? `Copied compact share link (${url.length} chars). Use Create Gist share for a practical public URL.`
+              : 'Share link copied.',
+            'status share-status ok',
+          );
         } catch (err) {
-          setShareStatus('Could not copy; link is in the address bar.', 'status share-status error');
-          window.location.hash = new URL(url).hash;
+          try {
+            if (!url) url = await playgroundShareUrl();
+            setShareGistOption(url);
+            setShareStatus(
+              shouldOfferGistShare(url)
+                ? `Share link is ${url.length} chars; use Create Gist share for a practical public URL.`
+                : 'Could not copy automatically; use your browser copy command on this generated link.',
+              shouldOfferGistShare(url) ? 'status share-status' : 'status share-status error',
+            );
+            window.prompt('Copy this compact share link:', url);
+          } catch (_) {
+            setShareStatus('Could not create a share link.', 'status share-status error');
+          }
+        } finally {
+          copyShareLinkButton.disabled = false;
+        }
+      }
+
+      async function createGistShare() {
+        if (!oversizedStateShareUrlForGist) {
+          setShareStatus('Create or copy an oversized playground state link first.');
+          return;
+        }
+        const token = getGithubGistToken();
+        if (!token) {
+          setShareStatus('GitHub Gist token was not provided; oversized state was not uploaded.', 'status share-status error');
+          return;
+        }
+        createGistShareButton.disabled = true;
+        setShareStatus('Creating secret GitHub Gist share…');
+        try {
+          const gistUrl = await createGistBackedShareUrl(currentStateForShare(), token);
+          await copyTextToClipboard(gistUrl);
+          oversizedStateShareUrlForGist = '';
+          createGistShareButton.hidden = true;
+          setShareStatus(`Created Gist-backed share link and copied it (${gistUrl.length} chars).`, 'status share-status ok');
+        } catch (err) {
+          setShareStatus('GitHub Gist share failed: ' + String(err && err.message ? err.message : err), 'status share-status error');
+        } finally {
+          createGistShareButton.disabled = !oversizedStateShareUrlForGist;
         }
       }
 
       async function restoreInitialState() {
         populateExamples();
-        const shared = readShareState();
+        const shared = await readShareState();
         if (shared) {
           proofCheckbox.checked = !!shared.proof;
           rdfCheckbox.checked = !!shared.rdf;
@@ -432,17 +737,36 @@
         setStatus('Running…');
         try {
           await new Promise(requestAnimationFrame);
-          const result = eyeronModule.reasonWithData(
-            input.getValue(),
-            data.getValue(),
-            proofCheckbox.checked,
-            rdfCheckbox.checked,
-            rdfFormatSelect.value,
-          );
-          output.setValue(result || '');
-          setStatus('Done', 'status ok');
+          clearErrorHighlight();
+          const rawReport = eyeronModule.reasonWithDataReport
+            ? eyeronModule.reasonWithDataReport(
+                input.getValue(),
+                data.getValue(),
+                proofCheckbox.checked,
+                rdfCheckbox.checked,
+                rdfFormatSelect.value,
+              )
+            : JSON.stringify({
+                ok: true,
+                output: eyeronModule.reasonWithData(
+                  input.getValue(),
+                  data.getValue(),
+                  proofCheckbox.checked,
+                  rdfCheckbox.checked,
+                  rdfFormatSelect.value,
+                ),
+              });
+          const report = JSON.parse(rawReport);
+          if (report.ok) {
+            output.setValue(report.output || '');
+            setStatus('Done', 'status ok');
+          } else {
+            showReasoningError(report);
+            setStatus('Syntax error', 'status error');
+          }
         } catch (err) {
           output.setValue(String(err && err.message ? err.message : err));
+          clearErrorHighlight();
           setStatus('Error', 'status error');
         } finally {
           runButton.disabled = false;
@@ -450,14 +774,17 @@
       }
 
       input.on('change', () => {
+        clearErrorHighlight();
         if (currentExample && input.getValue() !== currentExampleText) setExampleMarker('', '');
       });
       data.on('change', () => {
+        clearErrorHighlight();
         if (data.getValue().trim()) setExampleMarker('', '');
       });
 
       runButton.addEventListener('click', run);
       copyShareLinkButton.addEventListener('click', copyShareLink);
+      createGistShareButton.addEventListener('click', createGistShare);
       exampleSelect.addEventListener('change', async () => {
         try {
           await loadExample(exampleSelect.value);

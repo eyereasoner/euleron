@@ -60,7 +60,7 @@ python3 -m http.server
 
 The release build config enables the WebAssembly features used by Rust during `wasm-opt` optimization (`bulk-memory` and nontrapping float-to-int conversions). If you use a very old Binaryen/wasm-opt, update `wasm-pack`/Binaryen first.
 
-Then open `http://localhost:8000/playground.html`. The playground supports normal N3 reasoning, `-p`-style proof output, `-r`-style RDF/TriG compatibility, bundled example loading from `examples/`, and copyable share links.
+Then open `http://localhost:8000/playground.html`. The playground supports normal N3 reasoning, `-p`-style proof output, `-r`-style RDF/TriG compatibility, bundled example loading from `examples/`, syntax-error highlighting, compact share links, and Gist-backed links for oversized playground states.
 
 ## Command-line use
 

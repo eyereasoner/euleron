@@ -27,15 +27,30 @@ pub fn reason_with_data(program: &str, data: &str, proof: bool, rdf: bool, rdf_f
     run(program, data, proof, rdf, rdf_format).map_err(|err| JsValue::from_str(&err.to_string()))
 }
 
+#[wasm_bindgen(js_name = reasonWithDataReport)]
+pub fn reason_with_data_report(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &str) -> String {
+    match run_report(program, data, proof, rdf, rdf_format) {
+        Ok(output) => format!("{{\"ok\":true,\"output\":{}}}", json_string(&output)),
+        Err(err) => err.to_json(),
+    }
+}
+
 fn run(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &str) -> Result<String> {
+    run_report(program, data, proof, rdf, rdf_format).map_err(|err| EyeronError::new(err.display))
+}
+
+fn run_report(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &str) -> std::result::Result<String, PlaygroundError> {
     let mut doc = crate::Document::new();
     if data.trim().is_empty() {
-        let parsed = parse_source(program, proof, rdf, rdf_format, "playground")?;
+        let parsed = parse_source(program, proof, rdf, rdf_format, "playground")
+            .map_err(|err| PlaygroundError::from_error(err, program, "program", "playground"))?;
         doc.merge(parsed);
     } else {
-        let data_doc = parse_source(data, false, rdf, rdf_format, "playground-data")?;
+        let data_doc = parse_source(data, false, rdf, rdf_format, "playground-data")
+            .map_err(|err| PlaygroundError::from_error(err, data, "data", "playground-data"))?;
         doc.merge(data_doc);
-        let program_doc = parse_source(program, proof, false, "n3", "playground")?;
+        let program_doc = parse_source(program, proof, false, "n3", "playground")
+            .map_err(|err| PlaygroundError::from_error(err, program, "program", "playground"))?;
         doc.merge(program_doc);
     }
 
@@ -47,6 +62,74 @@ fn run(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &str) -> R
     } else {
         Ok(result_to_string(&doc.prefixes, &result.derived))
     }
+}
+
+#[derive(Debug)]
+struct PlaygroundError {
+    display: String,
+    message: String,
+    editor: &'static str,
+    line: Option<usize>,
+    column: Option<usize>,
+}
+
+impl PlaygroundError {
+    fn from_error(err: EyeronError, source: &str, editor: &'static str, label: &str) -> Self {
+        let (line, column) = err.offset.map(|offset| line_col(source, offset)).unwrap_or((0, 0));
+        Self {
+            display: err.with_source_location(source, label),
+            message: err.message,
+            editor,
+            line: (line > 0).then_some(line),
+            column: (column > 0).then_some(column),
+        }
+    }
+
+    fn to_json(&self) -> String {
+        let line = self.line.map(|value| value.to_string()).unwrap_or_else(|| "null".to_string());
+        let column = self.column.map(|value| value.to_string()).unwrap_or_else(|| "null".to_string());
+        format!(
+            "{{\"ok\":false,\"error\":{{\"message\":{},\"display\":{},\"editor\":{},\"line\":{},\"column\":{}}}}}",
+            json_string(&self.message),
+            json_string(&self.display),
+            json_string(self.editor),
+            line,
+            column,
+        )
+    }
+}
+
+fn line_col(source: &str, offset: usize) -> (usize, usize) {
+    let mut line = 1usize;
+    let mut col = 1usize;
+    for (i, ch) in source.char_indices() {
+        if i >= offset { break; }
+        if ch == '\n' {
+            line += 1;
+            col = 1;
+        } else {
+            col += 1;
+        }
+    }
+    (line, col)
+}
+
+fn json_string(value: &str) -> String {
+    let mut out = String::with_capacity(value.len() + 2);
+    out.push('\"');
+    for ch in value.chars() {
+        match ch {
+            '\\' => out.push_str("\\\\"),
+            '\"' => out.push_str("\\\""),
+            '\n' => out.push_str("\\n"),
+            '\r' => out.push_str("\\r"),
+            '\t' => out.push_str("\\t"),
+            ch if ch <= '\u{1f}' => out.push_str(&format!("\\u{:04x}", ch as u32)),
+            ch => out.push(ch),
+        }
+    }
+    out.push('\"');
+    out
 }
 
 fn parse_source(input: &str, proof: bool, rdf: bool, rdf_format: &str, label: &str) -> Result<crate::Document> {
