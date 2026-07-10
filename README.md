@@ -91,7 +91,7 @@ cargo run -- --rdf12-json --rdf12-format trig - < input.trig
 
 `--rdf12-json` emits machine-readable JSON quads for parser inspection. This mode is intended for conformance development and shares Eyeron's lexer, term parser, directive handling, list parser, blank-node property-list parser, and quoted-triple/formula representation with ordinary N3 parsing.
 
-The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--super-restricted`, `--deterministic-skolem`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations; flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
+The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 
@@ -315,7 +315,6 @@ This first release focuses on the core reasoning path and the bundled example su
 - custom external built-in modules;
 - complete coverage of every N3 built-in namespace.
 
-`examples/dining-philosophers.n3` is packaged as an example, but it is skipped in the default golden sweep because it needs a more selective scheduler for blank-node-heavy state-machine joins.
 
 ## Project layout
 

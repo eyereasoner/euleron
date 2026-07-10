@@ -18,8 +18,6 @@ struct CliOptions {
     rdf: bool,
     stream: bool,
     stream_messages: bool,
-    super_restricted: bool,
-    deterministic_skolem: bool,
     rdf12_json: bool,
     rdf12_format: Option<RdfFormat>,
     base_iri: Option<String>,
@@ -46,10 +44,6 @@ fn run() -> Result<()> {
     if opt.stream_messages {
         // RDF Message Logs are auto-detected by VERSION/MESSAGE delimiters.
     }
-    if opt.super_restricted || opt.deterministic_skolem {
-        // These flags are currently no-ops, but accepted to ease migration from the JS CLI.
-    }
-
     let sources = read_sources(&opt.files)?;
     let mut merged = Document::new();
     for (label, text) in &sources {
@@ -107,8 +101,6 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             "-p" | "--proof" | "--proof-comments" => opt.proof = true,
             "-r" | "--rdf" => opt.rdf = true,
             "-t" | "--stream" => opt.stream = true,
-            "-s" | "--super-restricted" => opt.super_restricted = true,
-            "-d" | "--deterministic-skolem" => opt.deterministic_skolem = true,
             "--builtin" | "--store" | "--store-path" => {
                 let flag = args[i].clone();
                 i += 1;
@@ -194,8 +186,6 @@ fn print_help() {
     println!("      --rdf12-json              Parse RDF 1.2 syntax and emit JSON quads");
     println!("      --rdf12-format FORMAT     RDF 1.2 format: turtle, n-triples, n-quads, or trig");
     println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");
-    println!("  -s, --super-restricted        Accepted for compatibility");
-    println!("  -d, --deterministic-skolem    Accepted for compatibility");
     println!("  -v, --version                 Print version");
     println!("  -h, --help                    Show this help");
 }

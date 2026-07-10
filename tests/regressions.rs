@@ -74,15 +74,6 @@ fn green(text: &str) -> String {
     }
 }
 
-fn yellow(text: &str) -> String {
-    if colour_enabled() {
-        format!("\x1b[33m{}\x1b[0m", text)
-    } else {
-        text.to_string()
-    }
-}
-
-
 #[test]
 fn rdf12_annotations_share_n3_lexer_parser_profile() {
     let input = r#"
@@ -168,6 +159,19 @@ fn normalize_proof_golden(text: &str) -> String {
     text.replace("\r\n", "\n").trim().to_string()
 }
 
+#[test]
+fn log_skolem_is_stable_by_default() {
+    let source = r#"
+        @prefix : <http://example.org/#> .
+        @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+
+        { ("abc" 77) log:skolem ?id . } => { :Result :skolem ?id . } .
+    "#;
+    let out1 = reason(source).unwrap();
+    let out2 = reason(source).unwrap();
+    assert_eq!(out1, out2, "log:skolem should be stable by default");
+    assert!(out1.contains(":Result :skolem genid:"), "{}", out1);
+}
 
 #[test]
 fn witch_derives_girl_as_witch() {
@@ -317,21 +321,7 @@ fn all_packaged_example_goldens_match_expected_lines() {
     cases.sort_by(|a, b| a.0.cmp(&b.0));
     assert!(!cases.is_empty(), "no example/golden pairs found");
 
-    // Keep known heavy/unsupported examples out of the default cargo test sweep.
-    // They remain packaged as examples, but need targeted scheduler work before
-    // they can be part of the always-on regression suite.
-    const SKIPPED_EXAMPLES: &[&str] = &["dining-philosophers"];
-
     for (name, source_path, golden_path) in cases {
-        if SKIPPED_EXAMPLES.contains(&name.as_str()) {
-            progress_line(&format!(
-                "example examples/{}.n3 ... {} (known scheduler/performance TODO)",
-                name,
-                yellow("ignored")
-            ));
-            continue;
-        }
-
         progress_line(&format!("example examples/{}.n3 ... running", name));
         let started = std::time::Instant::now();
 
@@ -358,7 +348,10 @@ fn all_packaged_example_goldens_match_expected_lines() {
             let _ = tx.send(result);
         });
 
-        let timeout = if name.starts_with("deep-taxonomy-") || name.starts_with("rdf-message-") {
+        let timeout = if name.starts_with("deep-taxonomy-")
+            || name.starts_with("rdf-message-")
+            || name == "dining-philosophers"
+        {
             std::time::Duration::from_secs(60)
         } else {
             std::time::Duration::from_secs(20)

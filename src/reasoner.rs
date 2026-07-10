@@ -7,6 +7,11 @@ pub type Bindings = BTreeMap<String, Term>;
 const MAX_BACKWARD_DEPTH: usize = 32;
 const MAX_BACKWARD_SOLUTIONS_PER_GOAL: usize = 1024;
 const MAX_MATCH_STEPS: usize = 200_000;
+// Multi-premise agenda matching is a win for small state-machine examples,
+// but on generated rule sets such as deep-taxonomy-100000 it makes every
+// broad subject/predicate fact probe unrelated multi-premise checks.  Keep
+// the original single-premise hot path for large programs.
+const MULTI_PREMISE_AGENDA_RULE_LIMIT: usize = 2048;
 
 #[derive(Debug, Default)]
 struct SearchBudget {
@@ -128,6 +133,7 @@ impl FactIndex {
 #[derive(Debug, Clone)]
 struct AgendaEntry {
     rule_index: usize,
+    premise_index: usize,
     goal: Triple,
     s_ground: Option<Term>,
     p_ground: Term,
@@ -161,24 +167,18 @@ impl AgendaIndex {
 
     fn candidates(&self, fact: &Triple) -> Vec<usize> {
         let mut out = Vec::<usize>::new();
-        let mut seen_rules = HashSet::<usize>::new();
 
         if let Some(entries) = self.by_p.get(&fact.p) {
-            for pos in entries {
-                let entry = &self.entries[*pos];
-                if seen_rules.insert(entry.rule_index) { out.push(*pos); }
-            }
+            out.extend(entries.iter().copied());
         }
         if let Some(entries) = self.by_sp.get(&(fact.s.clone(), fact.p.clone())) {
             for pos in entries {
-                let entry = &self.entries[*pos];
-                if seen_rules.insert(entry.rule_index) { out.push(*pos); }
+                if !out.contains(pos) { out.push(*pos); }
             }
         }
         if let Some(entries) = self.by_po.get(&(fact.p.clone(), fact.o.clone())) {
             for pos in entries {
-                let entry = &self.entries[*pos];
-                if seen_rules.insert(entry.rule_index) { out.push(*pos); }
+                if !out.contains(pos) { out.push(*pos); }
             }
         }
 
@@ -239,7 +239,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
     }
 
     let mut active_rules = doc.rules.clone();
-    let mut agenda_index = build_single_premise_agenda(&active_rules);
+    let mut agenda_index = build_forward_agenda(&active_rules);
     let mut agenda_cursor = 0usize;
     let mut generated_rule_facts = HashSet::<Triple>::new();
     let mut derived = Vec::<Triple>::new();
@@ -252,10 +252,10 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
 
         let before = seen.len();
 
-        // Fast path, modelled after the earlier Eyeling engine: safe single-premise
-        // rules are driven by newly seen facts.  This turns deep taxonomy chains
-        // from "scan every rule for every wave" into "look up the rules that
-        // can match this fact".
+        // Fast path, modelled after the earlier Eyeling engine: safe forward
+        // rules are driven by newly seen support facts.  This turns both deep
+        // taxonomy chains and state-machine examples from "scan every rule for
+        // every wave" into "look up the rule premises that can match this fact".
         while agenda_cursor < closure.len() {
             let fact = closure[agenda_cursor].clone();
             agenda_cursor += 1;
@@ -263,37 +263,88 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
             let mut restart_agenda = false;
 
             for entry_pos in candidates {
-                let (rule_index, goal) = {
+                let (rule_index, premise_index, goal) = {
                     let entry = &agenda_index.entries[entry_pos];
-                    (entry.rule_index, entry.goal.clone())
+                    (entry.rule_index, entry.premise_index, entry.goal.clone())
                 };
                 if rule_index >= active_rules.len() { continue; }
                 let rule = active_rules[rule_index].clone();
-                let mut bindings = BTreeMap::<String, Term>::new();
-                if !match_triple(&goal, &fact, &mut bindings) { continue; }
+                let mut trigger_bindings = BTreeMap::<String, Term>::new();
+                if !match_triple(&goal, &fact, &mut trigger_bindings) { continue; }
 
-                let mut pending_rules = Vec::<Rule>::new();
-                let rules_changed = emit_conclusions(
-                    &rule,
-                    &bindings,
-                    &mut closure,
-                    &mut fact_index,
-                    &mut seen,
-                    &explicit_seen,
-                    &mut generated_rule_facts,
-                    &mut derived,
-                    &mut proofs,
-                    &mut pending_rules,
-                    options.proof,
+                if rule.premise.len() == 1 {
+                    // Keep the single-premise agenda path as lean as the
+                    // original deep-taxonomy fast path: no Vec allocation and
+                    // no binding canonicalization are needed before emitting.
+                    let mut pending_rules = Vec::<Rule>::new();
+                    let rules_changed = emit_conclusions(
+                        &rule,
+                        &trigger_bindings,
+                        &mut closure,
+                        &mut fact_index,
+                        &mut seen,
+                        &explicit_seen,
+                        &mut generated_rule_facts,
+                        &mut derived,
+                        &mut proofs,
+                        &mut pending_rules,
+                        options.proof,
+                    );
+
+                    if rules_changed {
+                        active_rules.extend(pending_rules);
+                        agenda_index = build_forward_agenda(&active_rules);
+                        agenda_cursor = 0;
+                        restart_agenda = true;
+                    }
+                    if restart_agenda { break; }
+                    continue;
+                }
+
+                let mut rest = rule.premise.clone();
+                if premise_index >= rest.len() { continue; }
+                rest.remove(premise_index);
+                let mut rule_bindings = Vec::<Bindings>::new();
+                let mut backward_stack = HashSet::<String>::new();
+                let mut budget = SearchBudget::default();
+                match_premise_remaining(
+                    rest,
+                    &closure,
+                    Some(&fact_index),
+                    &active_rules,
+                    trigger_bindings,
+                    0,
+                    &mut backward_stack,
+                    &mut budget,
+                    &mut rule_bindings,
                 );
 
-                if rules_changed {
-                    active_rules.extend(pending_rules);
-                    agenda_index = build_single_premise_agenda(&active_rules);
-                    agenda_cursor = 0;
-                    restart_agenda = true;
-                    break;
+                let mut pending_rules = Vec::<Rule>::new();
+                for bindings in rule_bindings {
+                    let rules_changed = emit_conclusions(
+                        &rule,
+                        &bindings,
+                        &mut closure,
+                        &mut fact_index,
+                        &mut seen,
+                        &explicit_seen,
+                        &mut generated_rule_facts,
+                        &mut derived,
+                        &mut proofs,
+                        &mut pending_rules,
+                        options.proof,
+                    );
+
+                    if rules_changed {
+                        active_rules.extend(pending_rules);
+                        agenda_index = build_forward_agenda(&active_rules);
+                        agenda_cursor = 0;
+                        restart_agenda = true;
+                        break;
+                    }
                 }
+
+                if restart_agenda { break; }
             }
 
             if restart_agenda { continue; }
@@ -329,7 +380,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
 
         if !pending_rules.is_empty() {
             active_rules.extend(pending_rules);
-            agenda_index = build_single_premise_agenda(&active_rules);
+            agenda_index = build_forward_agenda(&active_rules);
             agenda_cursor = 0;
         }
 
@@ -453,7 +504,8 @@ fn insert_materialized_triple(
     rules_changed
 }
 
-fn build_single_premise_agenda(rules: &[Rule]) -> AgendaIndex {
+fn build_forward_agenda(rules: &[Rule]) -> AgendaIndex {
+    let allow_multi_premise_agenda = rules.len() <= MULTI_PREMISE_AGENDA_RULE_LIMIT;
     let mut backward_head_predicates = HashSet::<Term>::new();
     let mut has_wild_backward_head = false;
     for rule in rules {
@@ -466,36 +518,69 @@ fn build_single_premise_agenda(rules: &[Rule]) -> AgendaIndex {
 
     let mut agenda = AgendaIndex::default();
     for (idx, rule) in rules.iter().enumerate() {
-        let Some(entry) = agenda_entry_for_rule(idx, rule, &backward_head_predicates, has_wild_backward_head) else { continue; };
-        agenda.insert(entry);
+        for entry in agenda_entries_for_rule(
+            idx,
+            rule,
+            &backward_head_predicates,
+            has_wild_backward_head,
+            allow_multi_premise_agenda,
+        ) {
+            agenda.insert(entry);
+        }
     }
     agenda
 }
 
-fn agenda_entry_for_rule(
+fn agenda_entries_for_rule(
     rule_index: usize,
     rule: &Rule,
     backward_head_predicates: &HashSet<Term>,
     has_wild_backward_head: bool,
-) -> Option<AgendaEntry> {
-    if !rule.is_forward || rule.premise.len() != 1 { return None; }
-    if rule.conclusion.iter().any(triple_contains_blank) { return None; }
+    allow_multi_premise_agenda: bool,
+) -> Vec<AgendaEntry> {
+    if !rule.is_forward { return Vec::new(); }
+    if rule.premise.is_empty() { return Vec::new(); }
+    if rule.premise.len() != 1 && !allow_multi_premise_agenda { return Vec::new(); }
+    if rule.premise.len() == 1 && rule.conclusion.iter().any(triple_contains_blank) { return Vec::new(); }
 
-    let goal = &rule.premise[0];
-    let Term::Iri(pred_iri) = &goal.p else { return None; };
-    if is_builtin_iri(pred_iri) || pred_iri == LOG_IMPLIES || pred_iri == LOG_IMPLIED_BY { return None; }
-    if has_wild_backward_head || backward_head_predicates.contains(&goal.p) { return None; }
+    // A semi-naive agenda is complete for rules whose non-builtin support is
+    // ordinary materialized facts: when the last such support fact arrives, it
+    // triggers the rule and the remaining body is matched against the closure.
+    // If a body predicate may be supplied only by backward reasoning, leave the
+    // rule on the general matcher; otherwise a match could become possible
+    // without a new materialized fact for one of this rule's own premises.
+    if has_wild_backward_head { return Vec::new(); }
+    if rule.premise.iter().any(|goal| backward_head_predicates.contains(&goal.p)) { return Vec::new(); }
+    if !backward_head_predicates.is_empty()
+        && rule.premise.iter().any(|goal| matches!(goal.p, Term::Var(_)))
+    {
+        return Vec::new();
+    }
+    if rule.premise.iter().any(|goal| {
+        let Term::Iri(iri) = &goal.p else { return false; };
+        is_builtin_iri(iri) && !is_agenda_safe_builtin_iri(iri)
+    }) {
+        return Vec::new();
+    }
 
-    let s_ground = if goal.s.is_ground() { Some(goal.s.clone()) } else { None };
-    let o_ground = if goal.o.is_ground() { Some(goal.o.clone()) } else { None };
+    let mut entries = Vec::new();
+    for (premise_index, goal) in rule.premise.iter().enumerate() {
+        let Term::Iri(pred_iri) = &goal.p else { continue; };
+        if is_builtin_iri(pred_iri) || pred_iri == LOG_IMPLIES || pred_iri == LOG_IMPLIED_BY { continue; }
 
-    Some(AgendaEntry {
-        rule_index,
-        goal: goal.clone(),
-        s_ground,
-        p_ground: goal.p.clone(),
-        o_ground,
-    })
+        let s_ground = if goal.s.is_ground() { Some(goal.s.clone()) } else { None };
+        let o_ground = if goal.o.is_ground() { Some(goal.o.clone()) } else { None };
+
+        entries.push(AgendaEntry {
+            rule_index,
+            premise_index,
+            goal: goal.clone(),
+            s_ground,
+            p_ground: goal.p.clone(),
+            o_ground,
+        });
+    }
+    entries
 }
 
 fn triple_contains_blank(triple: &Triple) -> bool {
@@ -527,6 +612,18 @@ fn is_builtin_iri(iri: &str) -> bool {
         | LIST_SORT | LIST_NOT_MEMBER
         | MATH_SUM | MATH_DIFFERENCE
     ) || is_list_builtin(iri) || is_math_operator(iri) || is_math_comparison(iri)
+        || is_string_builtin(iri) || is_time_builtin(iri)
+}
+
+fn is_agenda_safe_builtin_iri(iri: &str) -> bool {
+    // These builtins are pure tests or deterministic value constructors over
+    // their arguments.  They do not inspect the growing fact closure, so a rule
+    // containing them can still be driven by its ordinary fact premises.
+    matches!(iri,
+        LOG_EQUAL_TO | LOG_NOT_EQUAL_TO | LOG_URI | LOG_RAW_TYPE | LOG_DTLIT
+        | LOG_LANGLIT | LOG_CONTENT | LOG_SKOLEM | CRYPTO_SHA
+        | MATH_SUM | MATH_DIFFERENCE
+    ) || is_math_operator(iri) || is_math_comparison(iri)
         || is_string_builtin(iri) || is_time_builtin(iri)
 }
 
