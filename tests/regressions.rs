@@ -1,4 +1,4 @@
-use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, proof_to_n3, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
+use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, proof_to_n3, rdf_result_to_string, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
 
 fn check_golden_non_prefix_lines(name: &str, source: &str, golden: &str) -> std::result::Result<(), String> {
     let out = reason(source).map_err(|err| format!("{} failed: {}", name, err))?;
@@ -72,6 +72,34 @@ fn green(text: &str) -> String {
     } else {
         text.to_string()
     }
+}
+
+
+#[test]
+fn rdf_trig_query_selects_dataset_without_rule_feedback() {
+    let trig = r#"
+        PREFIX : <http://example.org/#>
+
+        :g { :s :p :o }
+    "#;
+    let query = r#"
+        @prefix log: <http://www.w3.org/2000/10/swap/log#>.
+        PREFIX : <http://example.org/#>
+
+        {?S ?P ?O} log:query {?S ?P ?O}.
+    "#;
+
+    let mut doc = Document::new();
+    doc.merge(parse_rdf12(trig, None, RdfFormat::Trig).unwrap());
+    doc.merge(parse_n3(query, None).unwrap());
+
+    let result = reason_document(&doc, &ReasonerOptions::default());
+    let out = rdf_result_to_string(&doc.prefixes, &result.derived);
+
+    assert!(out.contains(":g {"), "{}", out);
+    assert!(out.contains("    :s :p :o ."), "{}", out);
+    assert!(!out.contains("log:nameOf"), "{}", out);
+    assert!(!out.contains("=>"), "{}", out);
 }
 
 #[test]

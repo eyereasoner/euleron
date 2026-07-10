@@ -14,6 +14,19 @@ pub fn result_to_string(prefixes: &BTreeMap<String, String>, triples: &[Triple])
     triples_to_n3(prefixes, triples)
 }
 
+pub fn rdf_result_to_string(prefixes: &BTreeMap<String, String>, triples: &[Triple]) -> String {
+    let output_strings: Vec<String> = triples
+        .iter()
+        .filter_map(|t| match (&t.p, &t.o) {
+            (Term::Iri(p), Term::Literal(l)) if p.as_str() == LOG_OUTPUT_STRING => Some(l.value.clone()),
+            _ => None,
+        })
+        .collect();
+
+    if !output_strings.is_empty() { return output_strings.join(""); }
+    triples_to_trig(prefixes, triples)
+}
+
 
 pub fn triple_to_n3(prefixes: &BTreeMap<String, String>, t: &Triple) -> String {
     if is_implication_triple(t) {
@@ -54,6 +67,52 @@ pub fn triples_to_n3(prefixes: &BTreeMap<String, String>, triples: &[Triple]) ->
         if matches!((&t.p, &t.o), (Term::Iri(p), Term::Literal(_)) if p.as_str() == LOG_OUTPUT_STRING) { continue; }
         if is_implication_triple(t) {
             out.push_str(&implication_to_n3(t, prefixes));
+            continue;
+        }
+        out.push_str(&format!(
+            "{} {} {} .\n",
+            term_to_n3(&t.s, prefixes, Position::Subject),
+            term_to_n3(&t.p, prefixes, Position::Predicate),
+            term_to_n3(&t.o, prefixes, Position::Object),
+        ));
+    }
+    out
+}
+
+pub fn triples_to_trig(prefixes: &BTreeMap<String, String>, triples: &[Triple]) -> String {
+    if triples.is_empty() { return String::new(); }
+    let used = used_prefixes_for_trig(prefixes, triples);
+    let mut out = String::new();
+
+    if used.contains("") {
+        if let Some(base) = prefixes.get("") {
+            out.push_str(&format!("@prefix : <{}> .\n", base));
+        }
+    }
+    for p in &used {
+        if p.is_empty() { continue; }
+        if let Some(base) = prefixes.get(p) {
+            out.push_str(&format!("@prefix {}: <{}> .\n", p, base));
+        }
+    }
+    if !used.is_empty() { out.push('\n'); }
+
+    for t in triples {
+        if matches!((&t.p, &t.o), (Term::Iri(p), Term::Literal(_)) if p.as_str() == LOG_OUTPUT_STRING) { continue; }
+        if let Some((graph, graph_triples)) = named_graph_fact(t) {
+            out.push_str(&format!(
+                "{} {{\n",
+                term_to_n3(graph, prefixes, Position::Subject),
+            ));
+            for inner in graph_triples {
+                out.push_str(&format!(
+                    "    {} {} {} .\n",
+                    term_to_n3(&inner.s, prefixes, Position::Subject),
+                    term_to_n3(&inner.p, prefixes, Position::Predicate),
+                    term_to_n3(&inner.o, prefixes, Position::Object),
+                ));
+            }
+            out.push_str("}\n");
             continue;
         }
         out.push_str(&format!(
@@ -180,6 +239,25 @@ fn used_prefixes(prefixes: &BTreeMap<String, String>, triples: &[Triple]) -> BTr
             collect_used_prefixes(&t.p, Position::Predicate, prefixes, &mut used);
         }
         collect_used_prefixes(&t.o, Position::Object, prefixes, &mut used);
+    }
+    used
+}
+
+fn used_prefixes_for_trig(prefixes: &BTreeMap<String, String>, triples: &[Triple]) -> BTreeSet<String> {
+    let mut used = BTreeSet::new();
+    for t in triples {
+        if let Some((graph, graph_triples)) = named_graph_fact(t) {
+            collect_used_prefixes(graph, Position::Subject, prefixes, &mut used);
+            for inner in graph_triples {
+                collect_used_prefixes(&inner.s, Position::Subject, prefixes, &mut used);
+                collect_used_prefixes(&inner.p, Position::Predicate, prefixes, &mut used);
+                collect_used_prefixes(&inner.o, Position::Object, prefixes, &mut used);
+            }
+        } else {
+            collect_used_prefixes(&t.s, Position::Subject, prefixes, &mut used);
+            collect_used_prefixes(&t.p, Position::Predicate, prefixes, &mut used);
+            collect_used_prefixes(&t.o, Position::Object, prefixes, &mut used);
+        }
     }
     used
 }

@@ -1,6 +1,6 @@
 use eyeron::error::{EyeronError, Result};
 use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, RdfFormat};
-use eyeron::printing::{document_debug, result_to_string};
+use eyeron::printing::{document_debug, rdf_result_to_string, result_to_string};
 use eyeron::proof::proof_to_n3;
 use eyeron::reasoner::{reason, ReasonerOptions};
 use eyeron::Document;
@@ -67,6 +67,8 @@ fn run() -> Result<()> {
     let result = reason(&merged, &reasoner_options);
     if opt.proof {
         print!("{}", proof_to_n3(&merged.prefixes, &result));
+    } else if opt.rdf {
+        print!("{}", rdf_result_to_string(&merged.prefixes, &result.derived));
     } else {
         print!("{}", result_to_string(&merged.prefixes, &result.derived));
     }
@@ -182,7 +184,7 @@ fn print_help() {
     println!("Options:");
     println!("  -a, --ast                     Print parsed AST/debug form and exit");
     println!("  -p, --proof                   Enable N3 proof explanations");
-    println!("  -r, --rdf                     Parse stdin as Turtle or require RDF file extensions");
+    println!("  -r, --rdf                     Enable RDF/TriG input/output compatibility");
     println!("  -s, --stream                  Output is emitted after fixpoint");
     println!("      --stream-messages         RDF Message Log input with VERSION/MESSAGE delimiters");
     println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");

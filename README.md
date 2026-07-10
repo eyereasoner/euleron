@@ -80,7 +80,7 @@ cargo run -- --help
 cargo run -- --version
 ```
 
-RDF-compatible input is selected by file extension. Eyeron recognizes `.ttl`, `.nt`, `.nq`, and `.trig`; standard input can be parsed as Turtle with `--rdf`:
+`-r`/`--rdf` enables RDF/TriG input/output compatibility. RDF-compatible input is selected by file extension: Eyeron recognizes `.ttl`, `.nt`, `.nq`, and `.trig`; standard input is parsed as Turtle when `--rdf` is set:
 
 ```bash
 cargo run -- input.ttl
@@ -90,7 +90,7 @@ cargo run -- input.trig
 cargo run -- --rdf --base-iri https://example.org/base - < input.ttl
 ```
 
-The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
+The CLI accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, `-r`/`--rdf` enables RDF/TriG compatibility, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 

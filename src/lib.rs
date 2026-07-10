@@ -16,7 +16,7 @@ pub use ast::{Document, Literal, Rule, SourceRef, Term, Triple};
 pub use error::{EyeronError, Result};
 pub use parser::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf_message_log};
 pub use rdf_compat::{parse_rdf12, RdfFormat};
-pub use printing::{document_debug, rdf12_json, result_to_string, triples_to_n3};
+pub use printing::{document_debug, rdf12_json, rdf_result_to_string, result_to_string, triples_to_n3, triples_to_trig};
 pub use proof::proof_to_n3;
 pub use reasoner::{reason as reason_document, ReasonerOptions, ReasonerResult};
 

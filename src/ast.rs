@@ -168,17 +168,23 @@ pub struct Rule {
     pub premise: Vec<Triple>,
     pub conclusion: Vec<Triple>,
     pub is_forward: bool,
+    pub is_query: bool,
     pub source: Option<SourceRef>,
     pub proof_var_source_names: BTreeMap<String, String>,
 }
 
 impl Rule {
     pub fn new(premise: Vec<Triple>, conclusion: Vec<Triple>, is_forward: bool) -> Self {
-        Self { premise, conclusion, is_forward, source: None, proof_var_source_names: BTreeMap::new() }
+        Self { premise, conclusion, is_forward, is_query: false, source: None, proof_var_source_names: BTreeMap::new() }
     }
 
     pub fn with_source(mut self, source: Option<SourceRef>) -> Self {
         self.source = source;
+        self
+    }
+
+    pub fn with_query(mut self, is_query: bool) -> Self {
+        self.is_query = is_query;
         self
     }
 }

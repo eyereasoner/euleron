@@ -238,7 +238,12 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
         }
     }
 
-    let mut active_rules = doc.rules.clone();
+    // `log:query` is an output selection, not a materialization rule.
+    // Evaluate normal rules to a fixpoint first, then run query rules against
+    // the closure.  This avoids query rules such as `{ ?S ?P ?O } log:query
+    // { ?S ?P ?O }` feeding their own rule-as-data back into the reasoner.
+    let query_rules: Vec<Rule> = doc.rules.iter().filter(|rule| rule.is_query).cloned().collect();
+    let mut active_rules: Vec<Rule> = doc.rules.iter().filter(|rule| !rule.is_query).cloned().collect();
     let mut agenda_index = build_forward_agenda(&active_rules);
     let mut agenda_cursor = 0usize;
     let mut generated_rule_facts = HashSet::<Triple>::new();
@@ -390,7 +395,46 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
         }
     }
 
+    if !query_rules.is_empty() {
+        derived = evaluate_query_rules(&query_rules, &closure, Some(&fact_index), &active_rules);
+    }
+
     ReasonerResult { explicit: doc.facts.clone(), explicit_sources: doc.fact_sources.clone(), derived, closure, proofs, rules: active_rules }
+}
+
+fn evaluate_query_rules(
+    query_rules: &[Rule],
+    closure: &[Triple],
+    fact_index: Option<&FactIndex>,
+    rules: &[Rule],
+) -> Vec<Triple> {
+    let mut out = Vec::<Triple>::new();
+    let mut seen = HashSet::<Triple>::new();
+
+    for rule in query_rules {
+        let matches = match_premises(&rule.premise, closure, fact_index, rules);
+        for bindings in matches {
+            let mut blank_map = BTreeMap::<String, Term>::new();
+            for head in &rule.conclusion {
+                let Some(t) = instantiate_triple(head, &bindings, &mut blank_map) else { continue; };
+                if is_unquote_instruction(&t) {
+                    if let Term::Formula(triples) = t.o {
+                        for expanded in triples {
+                            if admissible_fact(&expanded) && seen.insert(expanded.clone()) {
+                                out.push(expanded);
+                            }
+                        }
+                    }
+                    continue;
+                }
+                if admissible_fact(&t) && seen.insert(t.clone()) {
+                    out.push(t);
+                }
+            }
+        }
+    }
+
+    out
 }
 
 fn emit_conclusions(
@@ -947,9 +991,12 @@ fn match_one_premise(
 
 
 fn may_match_rule_fact(pattern: &Triple, bindings: &Bindings) -> bool {
+    // Expose rules as data only when the caller explicitly asks for implication
+    // triples.  A broad wildcard pattern such as `{ ?S ?P ?O } log:query
+    // { ?S ?P ?O }` must enumerate facts, not recursively materialize every
+    // rule as another fact/rule.
     match resolve(&pattern.p, bindings) {
         Term::Iri(iri) => iri == LOG_IMPLIES || iri == LOG_IMPLIED_BY,
-        Term::Var(_) => true,
         _ => false,
     }
 }
@@ -1192,7 +1239,8 @@ fn standardize_apart(rule: &Rule, prefix: &str) -> Rule {
         rule.conclusion.iter().map(|t| rename_triple(t, prefix)).collect(),
         rule.is_forward,
     )
-    .with_source(rule.source.clone());
+    .with_source(rule.source.clone())
+    .with_query(rule.is_query);
     out.proof_var_source_names = standardized_var_source_names(rule, prefix);
     out
 }

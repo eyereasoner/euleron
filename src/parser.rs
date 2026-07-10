@@ -583,7 +583,7 @@ impl Parser {
                 match predicate {
                     Term::Iri(ref iri) if iri == LOG_QUERY => {
                         let rhs = self.parse_formula_or_true()?;
-                        self.doc.rules.push(Rule::new(lhs, rhs, true).with_source(source.clone()));
+                        self.doc.rules.push(Rule::new(lhs, rhs, true).with_source(source.clone()).with_query(true));
                     }
                     other => {
                         // Otherwise the leading formula is an ordinary term subject, e.g.
