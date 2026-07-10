@@ -1,5 +1,3 @@
-#![allow(clippy::too_many_arguments)]
-
 use crate::ast::*;
 use crate::printing::{term_to_n3_object, triple_to_n3};
 use crate::reasoner::{find_backward_proof_for_goal, DerivedFact, ProofNode, ReasonerResult};
@@ -89,102 +87,92 @@ fn collect_proof_entries(
     base_facts: &[Triple],
     rules: &[Rule],
 ) -> Vec<ProofEntry> {
-    let mut entries = Vec::<ProofEntry>::new();
-    let mut seen = HashSet::<String>::new();
-    visit_derived_fact(root, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, &mut seen, &mut entries, None);
-    entries
+    let mut collector = ProofCollector {
+        derived_by_fact,
+        explicit_facts,
+        explicit_sources,
+        base_facts,
+        rules,
+        seen: HashSet::new(),
+        entries: Vec::new(),
+    };
+    collector.visit_derived_fact(root, None);
+    collector.entries
 }
 
-fn visit_derived_fact(
-    proof: &DerivedFact,
-    derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
-    explicit_facts: &BTreeSet<Triple>,
-    explicit_sources: &BTreeMap<Triple, SourceRef>,
-    base_facts: &[Triple],
-    rules: &[Rule],
-    seen: &mut HashSet<String>,
-    entries: &mut Vec<ProofEntry>,
-    children: Option<&[ProofNode]>,
-) {
-    let key = format!("rule:{}:{}", triple_key(&proof.fact), source_key(proof.rule.source.as_ref()));
-    if !seen.insert(key) { return; }
-    entries.push(ProofEntry::Rule(proof.clone()));
-
-    if let Some(children) = children {
-        for child in children { visit_proof_node(child, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries); }
-        return;
-    }
-
-    for premise in &proof.premises {
-        visit_premise(premise, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries, Some(proof));
-    }
+struct ProofCollector<'a> {
+    derived_by_fact: &'a BTreeMap<Triple, Vec<DerivedFact>>,
+    explicit_facts: &'a BTreeSet<Triple>,
+    explicit_sources: &'a BTreeMap<Triple, SourceRef>,
+    base_facts: &'a [Triple],
+    rules: &'a [Rule],
+    seen: HashSet<String>,
+    entries: Vec<ProofEntry>,
 }
 
-fn visit_proof_node(
-    node: &ProofNode,
-    derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
-    explicit_facts: &BTreeSet<Triple>,
-    explicit_sources: &BTreeMap<Triple, SourceRef>,
-    base_facts: &[Triple],
-    rules: &[Rule],
-    seen: &mut HashSet<String>,
-    entries: &mut Vec<ProofEntry>,
-) {
-    match node {
-        ProofNode::Rule { df, children } => {
-            visit_derived_fact(df, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries, Some(children));
-        }
-        ProofNode::Fact { fact, source } => {
-            let source = source.clone().or_else(|| explicit_sources.get(fact).cloned());
-            remember_entry(ProofEntry::Fact { fact: fact.clone(), source }, seen, entries)
-        }
-        ProofNode::Builtin { fact, builtin } => remember_entry(ProofEntry::Builtin { fact: fact.clone(), builtin: builtin.clone() }, seen, entries),
-    }
-}
+impl ProofCollector<'_> {
+    fn visit_derived_fact(&mut self, proof: &DerivedFact, children: Option<&[ProofNode]>) {
+        let key = format!("rule:{}:{}", triple_key(&proof.fact), source_key(proof.rule.source.as_ref()));
+        if !self.seen.insert(key) { return; }
+        self.entries.push(ProofEntry::Rule(proof.clone()));
 
-fn visit_premise(
-    premise: &Triple,
-    derived_by_fact: &BTreeMap<Triple, Vec<DerivedFact>>,
-    explicit_facts: &BTreeSet<Triple>,
-    explicit_sources: &BTreeMap<Triple, SourceRef>,
-    base_facts: &[Triple],
-    rules: &[Rule],
-    seen: &mut HashSet<String>,
-    entries: &mut Vec<ProofEntry>,
-    parent: Option<&DerivedFact>,
-) {
-    if let Some(candidates) = derived_by_fact.get(premise) {
-        if let Some(child) = candidates.iter().find(|candidate| match parent { Some(p) => candidate.fact != p.fact, None => true }) {
-            visit_derived_fact(child, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries, None);
+        if let Some(children) = children {
+            for child in children { self.visit_proof_node(child); }
             return;
         }
+
+        for premise in &proof.premises {
+            self.visit_premise(premise, Some(proof));
+        }
     }
 
-    if is_builtin_premise(premise) {
-        remember_entry(ProofEntry::Builtin { fact: premise.clone(), builtin: premise.p.clone() }, seen, entries);
-        return;
+    fn visit_proof_node(&mut self, node: &ProofNode) {
+        match node {
+            ProofNode::Rule { df, children } => self.visit_derived_fact(df, Some(children)),
+            ProofNode::Fact { fact, source } => {
+                let source = source.clone().or_else(|| self.explicit_sources.get(fact).cloned());
+                self.remember_entry(ProofEntry::Fact { fact: fact.clone(), source });
+            }
+            ProofNode::Builtin { fact, builtin } => {
+                self.remember_entry(ProofEntry::Builtin { fact: fact.clone(), builtin: builtin.clone() });
+            }
+        }
     }
 
-    if let Some(node) = find_backward_proof_for_goal(premise, base_facts, rules, 64) {
-        visit_proof_node(&node, derived_by_fact, explicit_facts, explicit_sources, base_facts, rules, seen, entries);
-        return;
+    fn visit_premise(&mut self, premise: &Triple, parent: Option<&DerivedFact>) {
+        if let Some(candidates) = self.derived_by_fact.get(premise) {
+            if let Some(child) = candidates.iter().find(|candidate| match parent { Some(p) => candidate.fact != p.fact, None => true }) {
+                self.visit_derived_fact(child, None);
+                return;
+            }
+        }
+
+        if is_builtin_premise(premise) {
+            self.remember_entry(ProofEntry::Builtin { fact: premise.clone(), builtin: premise.p.clone() });
+            return;
+        }
+
+        if let Some(node) = find_backward_proof_for_goal(premise, self.base_facts, self.rules, 64) {
+            self.visit_proof_node(&node);
+            return;
+        }
+
+        let source = if self.explicit_facts.contains(premise) {
+            self.explicit_sources.get(premise).cloned()
+        } else {
+            None
+        };
+        self.remember_entry(ProofEntry::Fact { fact: premise.clone(), source });
     }
 
-    let source = if explicit_facts.contains(premise) {
-        explicit_sources.get(premise).cloned()
-    } else {
-        None
-    };
-    remember_entry(ProofEntry::Fact { fact: premise.clone(), source }, seen, entries);
-}
-
-fn remember_entry(entry: ProofEntry, seen: &mut HashSet<String>, entries: &mut Vec<ProofEntry>) {
-    let key = match &entry {
-        ProofEntry::Rule(df) => format!("rule:{}:{}", triple_key(&df.fact), source_key(df.rule.source.as_ref())),
-        ProofEntry::Fact { fact, source } => format!("fact:{}:{}", triple_key(fact), source_key(source.as_ref())),
-        ProofEntry::Builtin { fact, .. } => format!("builtin:{}", triple_key(fact)),
-    };
-    if seen.insert(key) { entries.push(entry); }
+    fn remember_entry(&mut self, entry: ProofEntry) {
+        let key = match &entry {
+            ProofEntry::Rule(df) => format!("rule:{}:{}", triple_key(&df.fact), source_key(df.rule.source.as_ref())),
+            ProofEntry::Fact { fact, source } => format!("fact:{}:{}", triple_key(fact), source_key(source.as_ref())),
+            ProofEntry::Builtin { fact, .. } => format!("builtin:{}", triple_key(fact)),
+        };
+        if self.seen.insert(key) { self.entries.push(entry); }
+    }
 }
 
 fn render_proof_block(root: &DerivedFact, entries: &[ProofEntry], prefixes: &BTreeMap<String, String>) -> String {

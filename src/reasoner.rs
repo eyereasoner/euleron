@@ -1,3 +1,5 @@
+// Search and materialization helpers pass explicit shared state through recursive
+// calls; bundling it would couple otherwise independent borrowing lifetimes.
 #![allow(clippy::too_many_arguments)]
 
 use crate::ast::*;
