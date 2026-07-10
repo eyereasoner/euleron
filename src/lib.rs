@@ -12,6 +12,9 @@ pub mod printing;
 pub mod proof;
 pub mod reasoner;
 
+#[cfg(target_arch = "wasm32")]
+pub mod wasm;
+
 pub use ast::{Document, Literal, Rule, SourceRef, Term, Triple};
 pub use error::{EyeronError, Result};
 pub use parser::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf_message_log};

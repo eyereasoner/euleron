@@ -1,0 +1,24 @@
+{
+  "name": "eyeron",
+  "type": "module",
+  "collaborators": [
+    "Jos De Roo"
+  ],
+  "description": "A native Rust Notation3 reasoner.",
+  "version": "0.3.5",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/eyereasoner/eyeron"
+  },
+  "files": [
+    "eyeron_bg.wasm",
+    "eyeron.js",
+    "eyeron.d.ts"
+  ],
+  "main": "eyeron.js",
+  "types": "eyeron.d.ts",
+  "sideEffects": [
+    "./snippets/*"
+  ]
+}
