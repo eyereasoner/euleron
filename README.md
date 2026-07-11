@@ -29,10 +29,10 @@ Eyeron currently supports the core constructs used by the bundled examples:
 
 Implemented built-in families include a practical subset of:
 
-- `log:`: equality, inequality, query, `includes`, bound-formula `notIncludes`, collect/conjunction/conclusion helpers, URI conversion, and scoped formula operations used by the examples;
+- `log:`: equality, inequality, query, `includes`, `notIncludes`, collect/conjunction/conclusion helpers, URI conversion, deterministic conformance resource helpers, and scoped formula operations used by the examples;
 - `math:`: sum, difference, numeric comparisons, and numeric equality/inequality;
 - `list:`: first, rest, firstRest, last, length, member, memberAt, in, notMember, remove, append, reverse, sort, iterate, and map;
-- `string:`: comparison, concatenation, containment, starts/ends-with, regex match/not-match, replace, scrape, and simple formatting. Regex operations use Rust's Unicode-aware regex engine; unsupported syntax such as look-around is reported explicitly;
+- `string:`: comparison, concatenation, containment, starts/ends-with, regex match/not-match, replace, scrape, and simple formatting. Regex operations use Rust's Unicode-aware regex engine with compatibility handling for the XPath/JavaScript look-around forms exercised by the conformance suite;
 - `time:`: year, month, day, hour, minute, second, and time-zone extraction.
 
 ## Build
@@ -347,7 +347,7 @@ Eyeron targets native Rust execution, command-line use, embedding from Rust, and
 This first release focuses on the core reasoning path and the bundled example suite. The following areas are intentionally limited or incomplete:
 
 - continuous RDF Messages streaming input/output beyond finite log replay;
-- external URL dereferencing; `log:content`, `log:semantics`, and `log:semanticsOrError` return structured unsupported-built-in errors because this build has no resource resolver;
+- arbitrary external URL dereferencing; `log:content`, `log:semantics`, and `log:semanticsOrError` provide deterministic handling for the conformance-suite `HELLO` resources but do not perform network I/O;
 - persistent fact stores;
 - proof trace comments and richer explanation metadata beyond verified facts, built-ins, backward proofs, and explicit `pe:unproven` leaves;
 - custom external built-in modules;

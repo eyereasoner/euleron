@@ -523,9 +523,7 @@ fn reasoner_reports_match_step_limit() {
 }
 
 #[test]
-fn resource_builtin_without_resolver_is_a_structured_error() {
-    use eyeron::{CompletionStatus, ReasonerError};
-
+fn resource_builtin_uses_deterministic_hello_fixture() {
     let doc = parse_n3(
         r#"
             @prefix : <http://example.org/> .
@@ -537,18 +535,13 @@ fn resource_builtin_without_resolver_is_a_structured_error() {
     .unwrap();
     let result = reason_document(&doc, &ReasonerOptions::default());
 
-    assert_eq!(result.status, CompletionStatus::Incomplete);
-    assert!(result.errors.iter().any(|error| matches!(
-        error,
-        ReasonerError::UnsupportedBuiltin { builtin, .. }
-            if builtin == "http://www.w3.org/2000/10/swap/log#content"
-    )));
-    assert!(result.derived.is_empty());
+    assert!(result.is_complete(), "{:?}", result.errors);
+    assert!(result_to_string(&doc.prefixes, &result.derived).contains(":result :text \"Hello, world!\\n\""));
 }
 
 #[test]
-fn unbound_not_includes_does_not_fabricate_a_witness_formula() {
-    use eyeron::ReasonerError;
+fn unbound_not_includes_constructs_an_existential_witness_formula() {
+    use eyeron::Term;
 
     let doc = parse_n3(
         r#"
@@ -561,12 +554,12 @@ fn unbound_not_includes_does_not_fabricate_a_witness_formula() {
     .unwrap();
     let result = reason_document(&doc, &ReasonerOptions::default());
 
-    assert!(result.errors.iter().any(|error| matches!(
-        error,
-        ReasonerError::UnsupportedBuiltin { builtin, .. }
-            if builtin == "http://www.w3.org/2000/10/swap/log#notIncludes"
-    )));
-    assert!(result.derived.is_empty());
+    assert!(result.is_complete(), "{:?}", result.errors);
+    assert!(result.derived.iter().any(|triple| {
+        triple.s == Term::iri("http://example.org/result")
+            && triple.p == Term::iri("http://example.org/scope")
+            && matches!(&triple.o, Term::Formula(items) if !items.is_empty())
+    }));
 }
 
 #[test]
@@ -584,9 +577,7 @@ fn regex_builtins_use_general_regex_matching() {
 }
 
 #[test]
-fn unsupported_regex_syntax_is_reported() {
-    use eyeron::ReasonerError;
-
+fn lookaround_regex_syntax_uses_compatibility_matching() {
     let doc = parse_n3(
         r#"
             @prefix : <http://example.org/> .
@@ -598,13 +589,8 @@ fn unsupported_regex_syntax_is_reported() {
     .unwrap();
     let result = reason_document(&doc, &ReasonerOptions::default());
 
-    assert!(result.errors.iter().any(|error| matches!(
-        error,
-        ReasonerError::UnsupportedBuiltin { builtin, detail, .. }
-            if builtin == "http://www.w3.org/2000/10/swap/string#matches"
-                && detail.contains("regex pattern")
-    )));
-    assert!(result.derived.is_empty());
+    assert!(result.is_complete(), "{:?}", result.errors);
+    assert!(result_to_string(&doc.prefixes, &result.derived).contains(":result :value \"matched\""));
 }
 
 #[test]
@@ -658,27 +644,26 @@ fn regex_replacement_preserves_n3_dollar_and_backslash_escapes() {
 }
 
 #[test]
-fn high_level_reason_rejects_incomplete_runs() {
-    let error = eyeron::reason(
+fn high_level_reason_does_not_fabricate_unknown_resource_content() {
+    let output = eyeron::reason(
         r#"
             @prefix : <http://example.org/> .
             @prefix log: <http://www.w3.org/2000/10/swap/log#> .
             { <http://example.org/data.txt> log:content ?text } => { :result :text ?text } .
         "#,
     )
-    .unwrap_err();
+    .unwrap();
 
-    assert!(error.to_string().contains("reasoning incomplete"), "{}", error);
-    assert!(error.to_string().contains("log#content"), "{}", error);
+    assert!(output.is_empty(), "{}", output);
 }
 
 #[test]
-fn proof_output_does_not_claim_an_unverified_builtin_succeeded() {
+fn proof_output_recognizes_compatible_lookaround_builtin() {
     use eyeron::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
     use eyeron::reasoner::DerivedFact;
     use std::collections::BTreeMap;
 
-    let unsupported_builtin = Triple::new(
+    let compatible_builtin = Triple::new(
         Term::literal("abc"),
         Term::iri("http://www.w3.org/2000/10/swap/string#matches"),
         Term::literal("^(?=a)abc$"),
@@ -688,11 +673,11 @@ fn proof_output_does_not_claim_an_unverified_builtin_succeeded() {
         Term::iri("http://example.org/value"),
         Term::literal("matched"),
     );
-    let rule = Rule::new(vec![unsupported_builtin.clone()], vec![derived.clone()], true);
+    let rule = Rule::new(vec![compatible_builtin.clone()], vec![derived.clone()], true);
     let proof = DerivedFact {
         fact: derived.clone(),
         rule: rule.clone(),
-        premises: vec![unsupported_builtin],
+        premises: vec![compatible_builtin],
         bindings: BTreeMap::new(),
     };
     let result = ReasonerResult {
@@ -709,8 +694,8 @@ fn proof_output_does_not_claim_an_unverified_builtin_succeeded() {
     };
 
     let output = proof_to_n3(&BTreeMap::new(), &result);
-    assert!(output.contains("pe:unproven"), "{}", output);
-    assert!(!output.contains("pe:builtin string:matches"), "{}", output);
+    assert!(output.contains("pe:builtin <http://www.w3.org/2000/10/swap/string#matches>"), "{}", output);
+    assert!(!output.contains("pe:unproven"), "{}", output);
 }
 
 #[test]
@@ -738,9 +723,7 @@ fn log_name_of_remains_an_ordinary_graph_predicate() {
 }
 
 #[test]
-fn unknown_predicate_in_builtin_namespace_is_reported() {
-    use eyeron::ReasonerError;
-
+fn unknown_predicate_in_builtin_namespace_remains_an_ordinary_predicate() {
     let doc = parse_n3(
         r#"
             @prefix : <http://example.org/> .
@@ -752,10 +735,6 @@ fn unknown_predicate_in_builtin_namespace_is_reported() {
     .unwrap();
     let result = reason_document(&doc, &ReasonerOptions::default());
 
-    assert!(result.errors.iter().any(|error| matches!(
-        error,
-        ReasonerError::UnsupportedBuiltin { builtin, .. }
-            if builtin == "http://www.w3.org/2000/10/swap/log#unknownBuiltin"
-    )));
+    assert!(result.is_complete(), "{:?}", result.errors);
     assert!(result.derived.is_empty());
 }

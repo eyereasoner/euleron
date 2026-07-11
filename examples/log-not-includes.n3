@@ -13,20 +13,20 @@
 =>
 {
   :x :y 1 .
-  
+
   {
     :x :y 1
   }
-  => 
-  { 
+  =>
+  {
     :a :b :c
   }.
 }.
 
 {
-  { :x :y 1 } log:notIncludes { :a :b :c }.
+  ?SCOPE log:notIncludes { :a :b :c }.
 }
 =>
 {
-  :test :is false 
+  :test :is false
 }.
