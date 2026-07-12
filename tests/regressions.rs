@@ -60,18 +60,33 @@ fn progress_line(message: &str) {
 }
 
 fn colour_enabled() -> bool {
+    use std::io::IsTerminal;
+
     if std::env::var_os("NO_COLOR").is_some() {
         return false;
     }
-    !matches!(std::env::var("CARGO_TERM_COLOR"), Ok(value) if value == "never")
+
+    match std::env::var("CARGO_TERM_COLOR").as_deref() {
+        Ok("always") => true,
+        Ok("never") => false,
+        _ => std::io::stderr().is_terminal(),
+    }
 }
 
-fn green(text: &str) -> String {
+fn colour(text: &str, ansi_code: u8) -> String {
     if colour_enabled() {
-        format!("\x1b[32m{}\x1b[0m", text)
+        format!("\x1b[{}m{}\x1b[0m", ansi_code, text)
     } else {
         text.to_string()
     }
+}
+
+fn green(text: &str) -> String {
+    colour(text, 32)
+}
+
+fn red(text: &str) -> String {
+    colour(text, 31)
 }
 
 
@@ -416,11 +431,25 @@ fn all_packaged_example_goldens_match_expected_lines() {
             Ok(Ok(())) => progress_line(&format!(
                 "example examples/{}.n3 ... {} ({:.3}s)",
                 name,
-                green("ok"),
+                green("pass"),
                 started.elapsed().as_secs_f64()
             )),
-            Ok(Err(msg)) => panic!("{}", msg),
+            Ok(Err(msg)) => {
+                progress_line(&format!(
+                    "example examples/{}.n3 ... {} ({:.3}s)",
+                    name,
+                    red("fail"),
+                    started.elapsed().as_secs_f64()
+                ));
+                panic!("{}", msg);
+            }
             Err(std::sync::mpsc::RecvTimeoutError::Timeout) => {
+                progress_line(&format!(
+                    "example examples/{}.n3 ... {} ({:.3}s)",
+                    name,
+                    red("fail"),
+                    started.elapsed().as_secs_f64()
+                ));
                 panic!(
                     "{} exceeded the {:.0}s per-example golden-test limit after {:.3}s",
                     name,
@@ -429,6 +458,12 @@ fn all_packaged_example_goldens_match_expected_lines() {
                 );
             }
             Err(std::sync::mpsc::RecvTimeoutError::Disconnected) => {
+                progress_line(&format!(
+                    "example examples/{}.n3 ... {} ({:.3}s)",
+                    name,
+                    red("fail"),
+                    started.elapsed().as_secs_f64()
+                ));
                 panic!("{} golden-test worker terminated without reporting a result", name);
             }
         }
