@@ -90,6 +90,14 @@ Run multiple input files as one merged document:
 cargo run -- file1.n3 file2.n3
 ```
 
+Each positional input may also be an HTTP or HTTPS URL. Files and URLs can be
+mixed, redirects are followed, and a URL is used as the base IRI for relative
+references in that document:
+
+```console
+cargo run -- rules.n3 https://example.org/data.ttl
+```
+
 Read from standard input:
 
 ```bash

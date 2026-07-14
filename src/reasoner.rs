@@ -29,10 +29,15 @@ struct SearchBudget {
     limits_reached: BTreeSet<ReasonerLimit>,
     errors: Vec<ReasonerError>,
     error_seen: HashSet<ReasonerError>,
+    completed_backward_goals: HashMap<String, Vec<Triple>>,
+    next_variable_scope: usize,
 }
 
 impl SearchBudget {
-    fn new(options: &ReasonerOptions) -> Self {
+    fn new(
+        options: &ReasonerOptions,
+        completed_backward_goals: HashMap<String, Vec<Triple>>,
+    ) -> Self {
         Self {
             steps: 0,
             nested_match_steps: 0,
@@ -43,6 +48,8 @@ impl SearchBudget {
             limits_reached: BTreeSet::new(),
             errors: Vec::new(),
             error_seen: HashSet::new(),
+            completed_backward_goals,
+            next_variable_scope: 0,
         }
     }
 
@@ -57,6 +64,8 @@ impl SearchBudget {
             limits_reached: BTreeSet::new(),
             errors: Vec::new(),
             error_seen: HashSet::new(),
+            completed_backward_goals: HashMap::new(),
+            next_variable_scope: 0,
         }
     }
 
@@ -103,6 +112,7 @@ struct RunReport {
     errors: Vec<ReasonerError>,
     error_seen: HashSet<ReasonerError>,
     match_steps: usize,
+    completed_backward_goals: HashMap<String, Vec<Triple>>,
 }
 
 impl RunReport {
@@ -111,6 +121,7 @@ impl RunReport {
             .match_steps
             .saturating_add(budget.steps)
             .saturating_add(budget.nested_match_steps);
+        self.completed_backward_goals = budget.completed_backward_goals;
         self.limits_reached.extend(budget.limits_reached);
         for error in budget.errors {
             if self.error_seen.insert(error.clone()) {
@@ -524,7 +535,10 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
                 rest.remove(premise_index);
                 let mut rule_bindings = Vec::<Bindings>::new();
                 let mut backward_stack = HashSet::<String>::new();
-                let mut budget = SearchBudget::new(options);
+                let mut budget = SearchBudget::new(
+                    options,
+                    std::mem::take(&mut report.completed_backward_goals),
+                );
                 match_premise_remaining(
                     rest,
                     &closure,
@@ -977,7 +991,10 @@ fn match_premises(
 ) -> Vec<Bindings> {
     let mut out = Vec::new();
     let mut backward_stack = HashSet::<String>::new();
-    let mut budget = SearchBudget::new(options);
+    let mut budget = SearchBudget::new(
+        options,
+        std::mem::take(&mut report.completed_backward_goals),
+    );
     match_premise_remaining(
         premises.to_vec(),
         facts,
@@ -1438,20 +1455,48 @@ fn solve_backward_goal(
 
     let goal = resolve_triple(goal, bindings);
     let stack_key = backward_goal_key(&goal);
+    // Eyeling's completed-goal table is scoped to the current fact/rule set.
+    // Include their sizes in the key because forward chaining can grow the
+    // closure between searches in one reasoning run.
+    let table_key = format!("{}|{}|{}", facts.len(), rules.len(), stack_key);
+    if let Some(answers) = budget.completed_backward_goals.get(&table_key) {
+        let mut replayed = Vec::with_capacity(answers.len());
+        for answer in answers {
+            let mut b = bindings.clone();
+            if unify_triple(&goal, answer, &mut b) {
+                replayed.push(canonicalize_bindings(&b));
+            }
+        }
+        return replayed;
+    }
     if !backward_stack.insert(stack_key.clone()) {
         return Vec::new();
     }
 
+    let limits_before = budget.limits_reached.len();
+    let errors_before = budget.errors.len();
     let mut out = Vec::new();
     for (idx, rule) in rules.iter().enumerate() {
         if rule.is_forward { continue; }
-        let prefix = fresh_backward_prefix(depth, idx, &goal, bindings);
+        // Most backward programs group several independent predicates (for
+        // example the MARC helpers used by the RDF Message stream). Avoid
+        // cloning and standardizing rules whose heads cannot possibly unify
+        // with a goal that already has a concrete predicate. Recursive list
+        // walkers hit this path for every list cell, so the otherwise small
+        // linear scan becomes a substantial streaming cost.
+        if !rule_may_prove_goal(rule, &goal) { continue; }
+        let scope = budget.next_variable_scope;
+        budget.next_variable_scope = budget.next_variable_scope.wrapping_add(1);
+        let prefix = format!("__backward_{}_{}_{}__", depth, idx, scope);
         let renamed = standardize_apart(rule, &prefix);
         for head in &renamed.conclusion {
             let mut b = bindings.clone();
             if unify_triple(&goal, head, &mut b) {
                 let mut body_matches = Vec::new();
-                match_premise_at(&renamed.premise, facts, fact_index, rules, 0, b, depth + 1, backward_stack, budget, &mut body_matches);
+                match_backward_premises_ordered(
+                    renamed.premise.clone(), facts, fact_index, rules, b,
+                    depth + 1, backward_stack, budget, &mut body_matches,
+                );
                 out.extend(body_matches.into_iter().map(|m| canonicalize_bindings(&m)));
                 if out.len() >= budget.max_backward_solutions_per_goal {
                     out.truncate(budget.max_backward_solutions_per_goal);
@@ -1466,7 +1511,92 @@ fn solve_backward_goal(
         }
     }
     backward_stack.remove(&stack_key);
+
+    // Cache only complete, ground answer sets. Pending or partially-ground
+    // goals are deliberately excluded, matching Eyeling's conservative
+    // completed-table semantics.
+    if budget.limits_reached.len() == limits_before && budget.errors.len() == errors_before {
+        let mut answers = Vec::new();
+        let mut answer_seen = HashSet::new();
+        let mut cacheable = true;
+        for solution in &out {
+            let answer = resolve_triple(&goal, solution);
+            if !answer.s.is_ground() || !answer.p.is_ground() || !answer.o.is_ground() {
+                cacheable = false;
+                break;
+            }
+            if answer_seen.insert(answer.clone()) {
+                answers.push(answer);
+            }
+        }
+        if cacheable {
+            budget.completed_backward_goals.insert(table_key, answers);
+        }
+    }
     out
+}
+
+fn match_backward_premises_ordered(
+    premises: Vec<Triple>,
+    facts: &[Triple],
+    fact_index: Option<&FactIndex>,
+    rules: &[Rule],
+    bindings: Bindings,
+    depth: usize,
+    backward_stack: &mut HashSet<String>,
+    budget: &mut SearchBudget,
+    out: &mut Vec<Bindings>,
+) {
+    if !budget.tick() { return; }
+    if premises.is_empty() {
+        out.push(canonicalize_bindings(&bindings));
+        return;
+    }
+    for premise in &premises {
+        if premise_is_definitively_false(premise, facts, fact_index, rules, &bindings) {
+            return;
+        }
+    }
+
+    // Eyeling tries backward bodies in source order and defers goals that are
+    // not runnable yet. Stop at the first productive goal instead of eagerly
+    // materializing every remaining goal's candidates to rank them.
+    let mut selected = None;
+    for allow_backward in [false, true] {
+        for (index, premise) in premises.iter().enumerate() {
+            if !allow_backward && premise_is_speculative_builtin(premise, &bindings) {
+                continue;
+            }
+            let candidates = match_one_premise(
+                premise, facts, fact_index, rules, &bindings, depth,
+                backward_stack, budget, allow_backward,
+            );
+            if !candidates.is_empty() {
+                selected = Some((index, candidates));
+                break;
+            }
+        }
+        if selected.is_some() { break; }
+    }
+
+    let Some((index, candidates)) = selected else { return; };
+    let mut rest = premises;
+    rest.remove(index);
+    for candidate in candidates {
+        match_backward_premises_ordered(
+            rest.clone(), facts, fact_index, rules, candidate, depth,
+            backward_stack, budget, out,
+        );
+    }
+}
+
+fn rule_may_prove_goal(rule: &Rule, goal: &Triple) -> bool {
+    let Term::Iri(goal_predicate) = &goal.p else { return true; };
+    rule.conclusion.iter().any(|head| match &head.p {
+        Term::Iri(head_predicate) => head_predicate == goal_predicate,
+        Term::Var(_) => true,
+        _ => false,
+    })
 }
 
 
@@ -1532,7 +1662,7 @@ fn find_backward_proof_inner(
             if head_pred != goal_pred { continue; }
         }
 
-        let prefix = fresh_backward_prefix(depth, idx, goal, &BTreeMap::new());
+        let prefix = salted_backward_prefix(depth, idx, goal, &BTreeMap::new());
         let renamed = standardize_apart(rule, &prefix);
         let head = &renamed.conclusion[0];
         let mut initial = BTreeMap::new();
@@ -1577,7 +1707,7 @@ fn find_backward_proof_inner(
 }
 
 
-fn fresh_backward_prefix(depth: usize, rule_index: usize, goal: &Triple, bindings: &Bindings) -> String {
+fn salted_backward_prefix(depth: usize, rule_index: usize, goal: &Triple, bindings: &Bindings) -> String {
     // Each backward-rule application must receive fresh variables.  A prefix
     // based only on `(depth, rule_index)` is not enough: recursive rules can
     // invoke the same base rule twice at the same depth in one proof, as in

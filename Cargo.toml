@@ -1,6 +1,6 @@
 [package]
 name = "euleron"
-version = "0.3.14"
+version = "0.3.15"
 edition = "2021"
 default-run = "euleron"
 authors = ["Jos De Roo"]

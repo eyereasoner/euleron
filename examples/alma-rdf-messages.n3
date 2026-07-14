@@ -69,8 +69,9 @@
 { ?Record marc:id ?Result }
 <=
 {
-  (?Record "001") marc:field0 ?F001.
-  ?F001 marc:ctrl ?ID.
+  ?Record list:member ?F001.
+  (?F001 0) list:memberAt "001".
+  (?F001 4) list:memberAt ?ID.
   ( "http://lib.ugent.be/record/" ?ID ) string:concatenation ?IRI_ID.
   ?Result log:uri ?IRI_ID.
 }.
@@ -153,10 +154,10 @@
 { ( ?Record ?Tag ?Subfield ) marc:map ?Result }
 <=
 {
-  (?Record ?Tag) marc:field ?FL.
-  ?FL list:member ?F.
-  (?F ?Subfield) marc:subf ?T .
-  (?T " ") marc:join ?Result.
+  ?Record list:member ?F.
+  (?F 0) list:memberAt ?Tag.
+  (?F 3) list:memberAt ?Subfield.
+  (?F 4) list:memberAt ?Result.
 }.
 
 ## ---- Extraction rules (forward) ----

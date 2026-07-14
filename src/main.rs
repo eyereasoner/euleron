@@ -1,12 +1,16 @@
 use euleron::error::{EuleronError, Result};
-use euleron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, RdfFormat};
 use euleron::printing::{document_debug, rdf_result_to_string, result_to_string};
 use euleron::proof::proof_to_n3;
 use euleron::reasoner::{reason, ReasonerOptions};
 use euleron::Document;
+use euleron::{
+    is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log,
+    RdfFormat,
+};
+use std::collections::BTreeMap;
 use std::env;
 use std::fs;
-use std::io::{self, Read};
+use std::io::{self, BufRead, BufReader, Read, Write};
 use std::path::Path;
 
 const VERSION: &str = env!("CARGO_PKG_VERSION");
@@ -37,15 +41,23 @@ fn run() -> Result<()> {
     let opt = parse_args(env::args().skip(1).collect())?;
 
     if opt.stream {
-        eprintln!("warning: --stream is accepted; Euleron currently emits after the fixpoint is reached");
+        eprintln!(
+            "warning: --stream is accepted; Euleron currently emits after the fixpoint is reached"
+        );
     }
     if opt.stream_messages {
-        // RDF Message Logs are auto-detected by VERSION/MESSAGE delimiters.
+        return run_stream_messages(&opt);
     }
     let sources = read_sources(&opt.files)?;
     let mut merged = Document::new();
     for (label, text) in &sources {
-        let path_base = if label == "<stdin>" { None } else { path_to_file_iri(label).ok() };
+        let path_base = if label == "<stdin>" {
+            None
+        } else if is_http_url(label) {
+            Some(label.clone())
+        } else {
+            path_to_file_iri(label).ok()
+        };
         let base = opt.base_iri.as_deref().or(path_base.as_deref());
         let parsed = if is_rdf_message_log(text) {
             parse_rdf_message_log(text, base)
@@ -67,10 +79,19 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let mut reasoner_options = ReasonerOptions { proof: opt.proof, ..ReasonerOptions::default() };
-    if let Some(value) = opt.max_iterations { reasoner_options.max_iterations = value; }
-    if let Some(value) = opt.max_match_steps { reasoner_options.max_match_steps = value; }
-    if let Some(value) = opt.max_backward_depth { reasoner_options.max_backward_depth = value; }
+    let mut reasoner_options = ReasonerOptions {
+        proof: opt.proof,
+        ..ReasonerOptions::default()
+    };
+    if let Some(value) = opt.max_iterations {
+        reasoner_options.max_iterations = value;
+    }
+    if let Some(value) = opt.max_match_steps {
+        reasoner_options.max_match_steps = value;
+    }
+    if let Some(value) = opt.max_backward_depth {
+        reasoner_options.max_backward_depth = value;
+    }
     if let Some(value) = opt.max_backward_solutions_per_goal {
         reasoner_options.max_backward_solutions_per_goal = value;
     }
@@ -81,10 +102,207 @@ fn run() -> Result<()> {
     if opt.proof {
         print!("{}", proof_to_n3(&merged.prefixes, &result));
     } else if opt.rdf {
-        print!("{}", rdf_result_to_string(&merged.prefixes, &result.derived));
+        print!(
+            "{}",
+            rdf_result_to_string(&merged.prefixes, &result.derived)
+        );
     } else {
         print!("{}", result_to_string(&merged.prefixes, &result.derived));
     }
+    Ok(())
+}
+
+fn run_stream_messages(opt: &CliOptions) -> Result<()> {
+    if !opt.rdf {
+        return Err(EuleronError::new("--stream-messages requires -r/--rdf"));
+    }
+    if opt.ast || opt.proof || opt.stream {
+        return Err(EuleronError::new(
+            "--stream-messages cannot be combined with --ast, --proof, or --stream",
+        ));
+    }
+
+    let mut program = Document::new();
+    let mut message_sources = Vec::new();
+    for source in &opt.files {
+        if is_http_url(source) {
+            message_sources.push(source.clone());
+            continue;
+        }
+        let text = if source == "-" {
+            let mut text = String::new();
+            io::stdin().read_to_string(&mut text)?;
+            text
+        } else {
+            fs::read_to_string(source)?
+        };
+        if is_rdf_message_log(&text) {
+            message_sources.push(source.clone());
+        } else {
+            let base = opt.base_iri.as_deref().or_else(|| None);
+            let parsed = parse_n3_with_source(&text, base, Some(source))
+                .map_err(|err| EuleronError::new(err.with_source_location(&text, source)))?;
+            program.merge(parsed);
+        }
+    }
+    if message_sources.is_empty() {
+        return Err(EuleronError::new(
+            "--stream-messages did not find any RDF Message Log input",
+        ));
+    }
+
+    for source in message_sources {
+        let base = opt.base_iri.clone().or_else(|| {
+            if is_http_url(&source) {
+                Some(source.clone())
+            } else {
+                path_to_file_iri(&source).ok()
+            }
+        });
+        if is_http_url(&source) {
+            let response = ureq::get(&source)
+                .call()
+                .map_err(|err| EuleronError::new(format!("failed to fetch {source}: {err}")))?;
+            let final_url = response.get_url().to_string();
+            stream_message_reader(
+                BufReader::new(response.into_reader()),
+                &final_url,
+                base.as_deref(),
+                &program,
+                opt,
+            )?;
+        } else if source == "-" {
+            return Err(EuleronError::new(
+                "stdin RDF Message Logs cannot follow another stdin read",
+            ));
+        } else {
+            let file = fs::File::open(&source)?;
+            stream_message_reader(
+                BufReader::new(file),
+                &source,
+                base.as_deref(),
+                &program,
+                opt,
+            )?;
+        }
+    }
+    Ok(())
+}
+
+fn stream_message_reader<R: BufRead>(
+    mut reader: R,
+    label: &str,
+    base: Option<&str>,
+    program: &Document,
+    opt: &CliOptions,
+) -> Result<()> {
+    let mut directives = String::new();
+    let mut message = String::new();
+    let mut line = String::new();
+    let mut saw_version = false;
+    let mut saw_delimiter = false;
+    let mut message_index = 1usize;
+
+    loop {
+        line.clear();
+        let bytes = reader.read_line(&mut line).map_err(|err| {
+            EuleronError::new(format!("failed to read response from {label}: {err}"))
+        })?;
+        if bytes == 0 {
+            break;
+        }
+        let trimmed = line.trim();
+        let lower = trimmed.to_ascii_lowercase();
+        if (lower.starts_with("version ") || lower.starts_with("@version "))
+            && lower.contains("-messages")
+        {
+            saw_version = true;
+        } else if trimmed.eq_ignore_ascii_case("MESSAGE")
+            || trimmed.eq_ignore_ascii_case("@message .")
+        {
+            run_one_message(
+                program,
+                &directives,
+                &message,
+                label,
+                message_index,
+                base,
+                opt,
+            )?;
+            message.clear();
+            message_index += 1;
+            saw_delimiter = true;
+        } else if trimmed.starts_with("PREFIX ")
+            || trimmed.starts_with("prefix ")
+            || trimmed.starts_with("BASE ")
+            || trimmed.starts_with("base ")
+        {
+            if !directives.contains(&line) {
+                directives.push_str(&line);
+            }
+        } else {
+            message.push_str(&line);
+        }
+    }
+    if !saw_version {
+        return Err(EuleronError::new(format!(
+            "not an RDF Message Log: missing VERSION \"*-messages\" directive in {label}"
+        )));
+    }
+    if saw_delimiter || !message.trim().is_empty() {
+        run_one_message(
+            program,
+            &directives,
+            &message,
+            label,
+            message_index,
+            base,
+            opt,
+        )?;
+    }
+    Ok(())
+}
+
+fn run_one_message(
+    program: &Document,
+    directives: &str,
+    message: &str,
+    label: &str,
+    index: usize,
+    base: Option<&str>,
+    opt: &CliOptions,
+) -> Result<()> {
+    let replay = format!("{directives}\nVERSION \"1.2-messages\"\n{message}");
+    let message_label = format!("{label}#message-{index}");
+    let mut merged = program.clone();
+    let parsed = parse_rdf_message_log(&replay, base)
+        .map_err(|err| EuleronError::new(err.with_source_location(&replay, &message_label)))?;
+    merged.merge(parsed);
+    let mut options = ReasonerOptions {
+        proof: false,
+        ..ReasonerOptions::default()
+    };
+    if let Some(value) = opt.max_iterations {
+        options.max_iterations = value;
+    }
+    if let Some(value) = opt.max_match_steps {
+        options.max_match_steps = value;
+    }
+    if let Some(value) = opt.max_backward_depth {
+        options.max_backward_depth = value;
+    }
+    if let Some(value) = opt.max_backward_solutions_per_goal {
+        options.max_backward_solutions_per_goal = value;
+    }
+    let result = reason(&merged, &options);
+    if let Some(summary) = result.incomplete_summary() {
+        return Err(EuleronError::new(summary));
+    }
+    print!(
+        "{}",
+        rdf_result_to_string(&BTreeMap::new(), &result.derived)
+    );
+    io::stdout().flush()?;
     Ok(())
 }
 
@@ -108,13 +326,23 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             "--builtin" | "--store" | "--store-path" => {
                 let flag = args[i].clone();
                 i += 1;
-                if i >= args.len() { return Err(EuleronError::new(format!("{} requires a value", flag))); }
-                eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Euleron", flag);
+                if i >= args.len() {
+                    return Err(EuleronError::new(format!("{} requires a value", flag)));
+                }
+                eprintln!(
+                    "warning: {} is accepted for CLI compatibility but not implemented in Euleron",
+                    flag
+                );
             }
             "--stream-messages" => opt.stream_messages = true,
             "--base-iri" | "--base" => {
                 i += 1;
-                if i >= args.len() { return Err(EuleronError::new(format!("{} requires a value", args[i - 1]))); }
+                if i >= args.len() {
+                    return Err(EuleronError::new(format!(
+                        "{} requires a value",
+                        args[i - 1]
+                    )));
+                }
                 opt.base_iri = Some(args[i].clone());
             }
             "--max-iterations" => {
@@ -130,7 +358,10 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 opt.max_backward_solutions_per_goal = Some(parse_usize_option(&args, &mut i)?);
             }
             "--store-clear" | "--enforce-https" => {
-                eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Euleron", args[i]);
+                eprintln!(
+                    "warning: {} is accepted for CLI compatibility but not implemented in Euleron",
+                    args[i]
+                );
             }
             other if other.starts_with('-') && other != "-" => {
                 return Err(EuleronError::new(format!("unknown option {}", other)));
@@ -146,19 +377,30 @@ fn parse_usize_option(args: &[String], index: &mut usize) -> Result<usize> {
     let flag = args[*index].clone();
     *index += 1;
     let Some(value) = args.get(*index) else {
-        return Err(EuleronError::new(format!("{} requires a non-negative integer", flag)));
+        return Err(EuleronError::new(format!(
+            "{} requires a non-negative integer",
+            flag
+        )));
     };
-    value
-        .parse::<usize>()
-        .map_err(|_| EuleronError::new(format!("{} requires a non-negative integer, got {}", flag, value)))
+    value.parse::<usize>().map_err(|_| {
+        EuleronError::new(format!(
+            "{} requires a non-negative integer, got {}",
+            flag, value
+        ))
+    })
 }
 
 fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat>> {
     if label == "<stdin>" {
-        return Ok(if rdf_mode { Some(RdfFormat::Turtle) } else { None });
+        return Ok(if rdf_mode {
+            Some(RdfFormat::Turtle)
+        } else {
+            None
+        });
     }
 
-    let extension = Path::new(label)
+    let source_path = label.split(['?', '#']).next().unwrap_or(label);
+    let extension = Path::new(source_path)
         .extension()
         .and_then(|ext| ext.to_str())
         .map(str::to_ascii_lowercase);
@@ -188,6 +430,15 @@ fn read_sources(files: &[String]) -> Result<Vec<(String, String)>> {
             let mut s = String::new();
             io::stdin().read_to_string(&mut s)?;
             out.push(("<stdin>".to_string(), s));
+        } else if is_http_url(f) {
+            let response = ureq::get(f)
+                .call()
+                .map_err(|err| EuleronError::new(format!("failed to fetch {f}: {err}")))?;
+            let final_url = response.get_url().to_string();
+            let text = response.into_string().map_err(|err| {
+                EuleronError::new(format!("failed to read response from {f}: {err}"))
+            })?;
+            out.push((final_url, text));
         } else {
             out.push((f.clone(), fs::read_to_string(f)?));
         }
@@ -195,17 +446,27 @@ fn read_sources(files: &[String]) -> Result<Vec<(String, String)>> {
     Ok(out)
 }
 
+fn is_http_url(value: &str) -> bool {
+    value.starts_with("http://") || value.starts_with("https://")
+}
+
 fn path_to_file_iri(path: &str) -> std::result::Result<String, ()> {
     let abs = fs::canonicalize(Path::new(path)).map_err(|_| ())?;
     let s = abs.to_string_lossy().replace('\\', "/");
-    Ok(format!("file://{}{}", if s.starts_with('/') { "" } else { "/" }, percent_encode_path(&s)))
+    Ok(format!(
+        "file://{}{}",
+        if s.starts_with('/') { "" } else { "/" },
+        percent_encode_path(&s)
+    ))
 }
 
 fn percent_encode_path(path: &str) -> String {
     let mut out = String::new();
     for b in path.bytes() {
         match b {
-            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => out.push(char::from(b)),
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'/' | b'-' | b'_' | b'.' | b'~' => {
+                out.push(char::from(b))
+            }
             other => out.push_str(&format!("%{:02X}", other)),
         }
     }
@@ -215,15 +476,19 @@ fn percent_encode_path(path: &str) -> String {
 fn print_help() {
     println!("euleron {}", VERSION);
     println!();
-    println!("Usage: euleron [options] [file.n3|file.ttl|file.nt|file.nq|file.trig|- ...]");
+    println!("Usage: euleron [options] [file-or-url|- ...]");
     println!();
     println!("Options:");
     println!("  -a, --ast                     Print parsed AST/debug form and exit");
     println!("  -p, --proof                   Enable N3 proof explanations");
     println!("  -r, --rdf                     Enable RDF/TriG input/output compatibility");
     println!("  -s, --stream                  Output is emitted after fixpoint");
-    println!("      --stream-messages         RDF Message Log input with VERSION/MESSAGE delimiters");
-    println!("      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs");
+    println!(
+        "      --stream-messages         RDF Message Log input with VERSION/MESSAGE delimiters"
+    );
+    println!(
+        "      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs"
+    );
     println!("      --max-iterations N        Maximum outer fixpoint iterations");
     println!("      --max-match-steps N       Maximum matcher steps per premise search");
     println!("      --max-backward-depth N    Maximum backward-rule recursion depth");

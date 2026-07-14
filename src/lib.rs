@@ -129,4 +129,22 @@ mod tests {
         );
     }
 
+    #[test]
+    fn rdf_message_log_accepts_turtle_style_directives() {
+        let input = r#"
+            @version "1.1-messages" .
+            <http://example.org/one> <http://example.org/value> "first" .
+            @message .
+            <http://example.org/two> <http://example.org/value> "second" .
+            @message .
+        "#;
+        assert!(is_rdf_message_log(input));
+        let doc = parse_rdf_message_log(input, None).unwrap();
+        assert!(doc.facts.iter().any(|triple| {
+            matches!(&triple.o, Term::Formula(facts) if facts.iter().any(|fact| {
+                matches!(&fact.o, Term::Literal(literal) if literal.value == "first")
+            }))
+        }));
+    }
+
 }

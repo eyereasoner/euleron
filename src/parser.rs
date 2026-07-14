@@ -92,8 +92,8 @@ pub fn parse_rdf_message_log(input: &str, base_iri: Option<&str>) -> Result<Docu
 }
 
 pub fn is_rdf_message_log(input: &str) -> bool {
-    input.lines().any(|line| line.trim_start().starts_with("VERSION \"1.2-messages\""))
-        || input.lines().any(|line| line.trim() == "MESSAGE")
+    input.lines().any(|line| is_message_version_directive(line.trim()))
+        || input.lines().any(|line| is_message_delimiter(line.trim()))
 }
 
 fn split_rdf_message_log(input: &str) -> Result<(String, Vec<String>)> {
@@ -108,10 +108,10 @@ fn split_rdf_message_log(input: &str) -> Result<(String, Vec<String>)> {
             current.push('\n');
             continue;
         }
-        if trimmed.starts_with("VERSION ") {
+        if is_message_version_directive(trimmed) {
             continue;
         }
-        if trimmed == "MESSAGE" {
+        if is_message_delimiter(trimmed) {
             messages.push(current.clone());
             current.clear();
             continue;
@@ -131,6 +131,16 @@ fn split_rdf_message_log(input: &str) -> Result<(String, Vec<String>)> {
     }
     messages.push(current);
     Ok((prefixes, messages))
+}
+
+fn is_message_version_directive(line: &str) -> bool {
+    let lower = line.to_ascii_lowercase();
+    (lower.starts_with("version ") || lower.starts_with("@version "))
+        && lower.contains("-messages")
+}
+
+fn is_message_delimiter(line: &str) -> bool {
+    line.eq_ignore_ascii_case("MESSAGE") || line.eq_ignore_ascii_case("@message .")
 }
 
 fn normalize_turtle_directive(line: &str, upper: &str, n3: &str) -> Result<String> {
