@@ -166,6 +166,37 @@ fn proof_goldens_are_valid_n3_documents() {
 }
 
 #[test]
+fn every_proof_golden_has_a_source_that_generates_a_valid_proof() {
+    use std::fs;
+    use std::path::Path;
+
+    let root = Path::new(env!("CARGO_MANIFEST_DIR"));
+    let proof_dir = root.join("examples/proof");
+    let mut files = fs::read_dir(&proof_dir)
+        .expect("read examples/proof directory")
+        .map(|entry| entry.expect("read examples/proof entry").path())
+        .filter(|path| path.extension().and_then(|ext| ext.to_str()) == Some("n3"))
+        .collect::<Vec<_>>();
+    files.sort();
+
+    for golden_path in files {
+        let name = golden_path.file_name().and_then(|name| name.to_str()).expect("utf8 proof name");
+        let source_path = root.join("examples").join(name);
+        assert!(source_path.exists(), "{} has no corresponding source example", golden_path.display());
+        let source = fs::read_to_string(&source_path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {}", source_path.display(), err));
+        let label = source_path.to_string_lossy();
+        let doc = parse_n3_with_source(&source, None, Some(label.as_ref()))
+            .unwrap_or_else(|err| panic!("failed to parse {}: {}", source_path.display(), err));
+        let result = reason_document(&doc, &ReasonerOptions { proof: true, ..ReasonerOptions::default() });
+        let proof = proof_to_n3(&doc.prefixes, &result);
+        assert!(!proof.trim().is_empty(), "{} generated an empty proof", source_path.display());
+        parse_n3(&proof, None)
+            .unwrap_or_else(|err| panic!("generated proof for {} is not valid N3: {}\n{}", name, err, proof));
+    }
+}
+
+#[test]
 fn selected_proof_examples_match_eyeling_style_goldens() {
     use std::fs;
     use std::path::Path;
@@ -236,6 +267,48 @@ fn playground_html_is_packaged_for_browser_wasm() {
     assert!(html.contains("The Euleron N3 Playground"), "{}", playground.display());
     assert!(html.contains("./pkg/euleron.js"), "playground should load the wasm-pack web bundle");
     assert!(html.contains("reasonWithData"), "playground should expose separate data + N3 program reasoning");
+
+    let examples_dir = root.join("examples");
+    let mut expected = fs::read_dir(&examples_dir)
+        .expect("read examples directory")
+        .map(|entry| entry.expect("read examples entry").path())
+        .filter(|path| path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("n3"))
+        .map(|path| path.file_name().unwrap().to_string_lossy().into_owned())
+        .collect::<Vec<_>>();
+    expected.sort();
+
+    let list = html.split("const bundledExamples = [").nth(1)
+        .and_then(|tail| tail.split("];").next())
+        .expect("playground bundledExamples array");
+    let mut actual = list.lines()
+        .filter_map(|line| line.trim().trim_end_matches(',').strip_prefix('"').and_then(|line| line.strip_suffix('"')))
+        .map(str::to_string)
+        .collect::<Vec<_>>();
+    actual.sort();
+    assert_eq!(expected, actual, "playground bundledExamples must list every top-level N3 example");
+}
+
+#[test]
+fn every_top_level_n3_example_parses() {
+    use std::fs;
+    use std::path::Path;
+
+    let examples_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples");
+    let mut files = fs::read_dir(&examples_dir)
+        .expect("read examples directory")
+        .map(|entry| entry.expect("read examples entry").path())
+        .filter(|path| path.is_file() && path.extension().and_then(|ext| ext.to_str()) == Some("n3"))
+        .collect::<Vec<_>>();
+    files.sort();
+    assert!(!files.is_empty(), "no top-level N3 examples found");
+
+    for path in files {
+        let source = fs::read_to_string(&path)
+            .unwrap_or_else(|err| panic!("failed to read {}: {}", path.display(), err));
+        let label = path.to_string_lossy();
+        parse_n3_with_source(&source, None, Some(label.as_ref()))
+            .unwrap_or_else(|err| panic!("example {} is not valid N3: {}", path.display(), err));
+    }
 }
 
 #[test]
