@@ -202,6 +202,26 @@ fn normalize_proof_golden(text: &str) -> String {
     text.replace("\r\n", "\n").trim().to_string()
 }
 
+#[test]
+fn age_example_supports_current_time_date_difference_and_duration_comparison() {
+    use std::fs;
+    use std::path::Path;
+
+    let path = Path::new(env!("CARGO_MANIFEST_DIR")).join("examples/age.n3");
+    let source = fs::read_to_string(&path).expect("read examples/age.n3");
+    let doc = parse_n3_with_source(&source, None, Some("age.n3")).expect("parse age example");
+    let result = reason_document(&doc, &ReasonerOptions { proof: true, ..ReasonerOptions::default() });
+
+    assert!(result.derived.iter().any(|triple| {
+        triple.s == euleron::Term::Iri("https://example.org/#test".to_string())
+            && triple.p == euleron::Term::Iri("https://example.org/#is".to_string())
+    }));
+    let proof = proof_to_n3(&doc.prefixes, &result);
+    assert!(proof.contains("pe:builtin time:localTime"), "{proof}");
+    assert!(proof.contains("pe:builtin math:difference"), "{proof}");
+    assert!(proof.contains("pe:builtin math:greaterThan"), "{proof}");
+}
+
 
 #[test]
 fn playground_html_is_packaged_for_browser_wasm() {

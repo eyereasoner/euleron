@@ -6,6 +6,7 @@ use crate::ast::*;
 use crate::parser::parse_n3;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 pub type Bindings = BTreeMap<String, Term>;
 
@@ -2882,8 +2883,15 @@ fn eval_rdf_rest(left: &Term, right: &Term, bindings: &Bindings, facts: &[Triple
 fn eval_math_difference(left: &Term, right: &Term, bindings: &Bindings, facts: &[Triple]) -> Vec<Bindings> {
     let Some(items) = rdf_or_native_list(left, bindings, facts) else { return Vec::new(); };
     if items.len() != 2 { return Vec::new(); }
-    let Some(a) = numeric_value(&resolve(&items[0], bindings)) else { return Vec::new(); };
-    let Some(b) = numeric_value(&resolve(&items[1], bindings)) else { return Vec::new(); };
+    let first = resolve(&items[0], bindings);
+    let second = resolve(&items[1], bindings);
+    if let (Some(a), Some(b)) = (datetime_seconds(&first), datetime_seconds(&second)) {
+        let result = typed_literal(format_duration_seconds(a - b), XSD_DURATION);
+        let mut out = bindings.clone();
+        return if unify_term(right, &result, &mut out) { vec![canonicalize_bindings(&out)] } else { Vec::new() };
+    }
+    let Some(a) = numeric_value(&first) else { return Vec::new(); };
+    let Some(b) = numeric_value(&second) else { return Vec::new(); };
     let result = numeric_literal(a.value - b.value, a.integer && b.integer);
     if matches!(resolve(right, bindings), Term::Blank(_)) { return vec![bindings.clone()]; }
     let mut out = bindings.clone();
@@ -3425,10 +3433,21 @@ fn simple_format(fmt: &str, args: &[String]) -> Option<String> {
 }
 
 fn is_time_builtin(iri: &str) -> bool {
-    matches!(iri, TIME_YEAR | TIME_MONTH | TIME_DAY | TIME_HOUR | TIME_MINUTE | TIME_SECOND | TIME_TIME_ZONE)
+    matches!(iri, TIME_YEAR | TIME_MONTH | TIME_DAY | TIME_HOUR | TIME_MINUTE | TIME_SECOND | TIME_TIME_ZONE | TIME_LOCAL_TIME)
 }
 
 fn eval_time_builtin(pred: &str, left: &Term, right: &Term, bindings: &Bindings) -> Vec<Bindings> {
+    if pred == TIME_LOCAL_TIME {
+        let resolved = resolve(right, bindings);
+        if !matches!(resolved, Term::Var(_) | Term::Blank(_)) {
+            return if datetime_seconds(&resolved).is_some() { vec![bindings.clone()] } else { Vec::new() };
+        }
+        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok();
+        let Some(now) = now else { return Vec::new(); };
+        let value = typed_literal(format_datetime_utc(now.as_secs() as i64, now.subsec_millis()), XSD_DATE_TIME);
+        let mut b = bindings.clone();
+        return if unify_term(right, &value, &mut b) { vec![canonicalize_bindings(&b)] } else { Vec::new() };
+    }
     let Some(dt) = string_value(&resolve(left, bindings)) else { return Vec::new(); };
     let Some(parts) = parse_datetime_parts(&dt) else { return Vec::new(); };
     let value = match pred {
@@ -3481,8 +3500,10 @@ fn string_value(term: &Term) -> Option<String> {
 }
 
 fn eval_math_compare(pred: &str, left: &Term, right: &Term, bindings: &Bindings) -> Vec<Bindings> {
-    let Some(l) = numeric_value(&resolve(left, bindings)) else { return Vec::new(); };
-    let Some(r) = numeric_value(&resolve(right, bindings)) else { return Vec::new(); };
+    let lterm = resolve(left, bindings);
+    let rterm = resolve(right, bindings);
+    let Some(l) = comparable_number(&lterm) else { return Vec::new(); };
+    let Some(r) = comparable_number(&rterm) else { return Vec::new(); };
     let ok = if pred == MATH_GREATER_THAN {
         l.value > r.value
     } else if pred == MATH_LESS_THAN {
@@ -3499,6 +3520,82 @@ fn eval_math_compare(pred: &str, left: &Term, right: &Term, bindings: &Bindings)
         false
     };
     if ok { vec![bindings.clone()] } else { Vec::new() }
+}
+
+const XSD_DATE: &str = "http://www.w3.org/2001/XMLSchema#date";
+const XSD_DATE_TIME: &str = "http://www.w3.org/2001/XMLSchema#dateTime";
+const XSD_DURATION: &str = "http://www.w3.org/2001/XMLSchema#duration";
+
+fn typed_literal(value: String, datatype: &str) -> Term {
+    Term::Literal(Literal { value, datatype: Some(datatype.to_string()), language: None })
+}
+
+fn comparable_number(term: &Term) -> Option<Numeric> {
+    numeric_value(term).or_else(|| duration_seconds(term).map(|value| Numeric { value, integer: false }))
+}
+
+fn duration_seconds(term: &Term) -> Option<f64> {
+    let Term::Literal(lit) = term else { return None; };
+    if lit.datatype.as_deref() != Some(XSD_DURATION) { return None; }
+    let captures = Regex::new(r"^(-)?P(?:(\d+(?:\.\d+)?)Y)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)D)?(?:T(?:(\d+(?:\.\d+)?)H)?(?:(\d+(?:\.\d+)?)M)?(?:(\d+(?:\.\d+)?)S)?)?$").ok()?.captures(&lit.value)?;
+    let n = |i| captures.get(i).map_or(Some(0.0), |m| m.as_str().parse().ok());
+    // XML Schema year/month durations have no fixed length. Eyeling's age
+    // comparisons use the conventional Gregorian averages below.
+    let seconds = n(2)? * 31_556_952.0 + n(3)? * 2_629_746.0 + n(4)? * 86_400.0
+        + n(5)? * 3_600.0 + n(6)? * 60.0 + n(7)?;
+    Some(if captures.get(1).is_some() { -seconds } else { seconds })
+}
+
+fn datetime_seconds(term: &Term) -> Option<f64> {
+    let Term::Literal(lit) = term else { return None; };
+    if !matches!(lit.datatype.as_deref(), Some(XSD_DATE | XSD_DATE_TIME)) { return None; }
+    let re = Regex::new(r"^(\d{4})-(\d{2})-(\d{2})(?:T(\d{2}):(\d{2}):(\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})?)?(Z|[+-]\d{2}:\d{2})?$").ok()?;
+    let c = re.captures(&lit.value)?;
+    let get = |i| c.get(i).and_then(|m| m.as_str().parse::<i64>().ok());
+    let (year, month, day) = (get(1)? as i32, get(2)? as u32, get(3)? as u32);
+    let (hour, minute, second) = (get(4).unwrap_or(0), get(5).unwrap_or(0), get(6).unwrap_or(0));
+    let fraction = c.get(7).and_then(|m| format!("0.{}", m.as_str()).parse::<f64>().ok()).unwrap_or(0.0);
+    let tz = c.get(8).or_else(|| c.get(9)).map(|m| m.as_str()).unwrap_or("Z");
+    let offset = if tz == "Z" { 0 } else {
+        let sign = if &tz[0..1] == "-" { -1 } else { 1 };
+        sign * (tz[1..3].parse::<i64>().ok()? * 3600 + tz[4..6].parse::<i64>().ok()? * 60)
+    };
+    Some((days_from_civil(year, month, day) * 86_400 + hour * 3600 + minute * 60 + second - offset) as f64 + fraction)
+}
+
+fn days_from_civil(year: i32, month: u32, day: u32) -> i64 {
+    let y = i64::from(year) - i64::from(month <= 2);
+    let era = if y >= 0 { y } else { y - 399 } / 400;
+    let yoe = y - era * 400;
+    let m = i64::from(month);
+    let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + i64::from(day) - 1;
+    era * 146_097 + yoe * 365 + yoe / 4 - yoe / 100 + doy - 719_468
+}
+
+fn civil_from_days(days: i64) -> (i32, u32, u32) {
+    let z = days + 719_468;
+    let era = if z >= 0 { z } else { z - 146_096 } / 146_097;
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let mut y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = mp + if mp < 10 { 3 } else { -9 };
+    y += i64::from(m <= 2);
+    (y as i32, m as u32, d as u32)
+}
+
+fn format_datetime_utc(seconds: i64, millis: u32) -> String {
+    let days = seconds.div_euclid(86_400);
+    let sod = seconds.rem_euclid(86_400);
+    let (year, month, day) = civil_from_days(days);
+    format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}+00:00", sod / 3600, sod % 3600 / 60, sod % 60)
+}
+
+fn format_duration_seconds(seconds: f64) -> String {
+    let sign = if seconds < 0.0 { "-" } else { "" };
+    format!("{sign}PT{}S", trim_float(seconds.abs()))
 }
 
 #[derive(Debug, Clone, Copy)]

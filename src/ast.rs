@@ -99,6 +99,7 @@ pub const TIME_HOUR: &str = "http://www.w3.org/2000/10/swap/time#hour";
 pub const TIME_MINUTE: &str = "http://www.w3.org/2000/10/swap/time#minute";
 pub const TIME_SECOND: &str = "http://www.w3.org/2000/10/swap/time#second";
 pub const TIME_TIME_ZONE: &str = "http://www.w3.org/2000/10/swap/time#timeZone";
+pub const TIME_LOCAL_TIME: &str = "http://www.w3.org/2000/10/swap/time#localTime";
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct Literal {
