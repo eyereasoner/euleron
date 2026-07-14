@@ -1,4 +1,4 @@
-use euleron::{
+use feye::{
     parse_n3, reason_document, result_to_string, ReasonerError, ReasonerOptions, Term,
 };
 use std::fs;
@@ -203,7 +203,7 @@ fn run_one(path: &Path) -> Score {
 
 fn iri(value: &str) -> Term { Term::Iri(value.to_string()) }
 
-fn find_tests(facts: &[euleron::Triple]) -> Vec<Term> {
+fn find_tests(facts: &[feye::Triple]) -> Vec<Term> {
     let s = iri(&format!("{}test", EX));
     let p = iri(&format!("{}contains", EX));
     let mut tests: Vec<_> = facts.iter()
@@ -215,13 +215,13 @@ fn find_tests(facts: &[euleron::Triple]) -> Vec<Term> {
     tests
 }
 
-fn has_result_node(facts: &[euleron::Triple], object: &Term) -> bool {
+fn has_result_node(facts: &[feye::Triple], object: &Term) -> bool {
     let s = iri(&format!("{}result", EX));
     let p = iri(&format!("{}has", EX));
     facts.iter().any(|triple| triple.s == s && triple.p == p && &triple.o == object)
 }
 
-fn has_test_boolean(facts: &[euleron::Triple], value: &str) -> bool {
+fn has_test_boolean(facts: &[feye::Triple], value: &str) -> bool {
     let s = iri(&format!("{}test", EX));
     let p = iri(&format!("{}is", EX));
     facts.iter().any(|triple| {

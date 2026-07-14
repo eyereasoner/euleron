@@ -66,6 +66,6 @@ It is about the shape of the pipeline:
 ## Run it
 
 ```bash
-euleron -r examples/rdf-message-cold-chain-recall.n3 \
+feye -r examples/rdf-message-cold-chain-recall.n3 \
   examples/input/rdf-message-cold-chain-recall.trig
 ```

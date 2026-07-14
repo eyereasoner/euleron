@@ -1,25 +1,25 @@
 [package]
-name = "euleron"
+name = "feye"
 version = "0.3.18"
 edition = "2021"
-default-run = "euleron"
+default-run = "feye"
 authors = ["Jos De Roo"]
 license = "MIT"
 description = "A native Rust Notation3 reasoner."
-repository = "https://github.com/eyereasoner/euleron"
+repository = "https://github.com/eyereasoner/feye"
 
 [lib]
-name = "euleron"
+name = "feye"
 path = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
 
 [[bin]]
-name = "euleron"
+name = "feye"
 path = "src/main.rs"
 test = false
 
 [[bin]]
-name = "euleron-playground-build"
+name = "feye-playground-build"
 path = "tools/build_playground.rs"
 test = false
 

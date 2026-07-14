@@ -1,4 +1,4 @@
-/* @ts-self-types="./euleron.d.ts" */
+/* @ts-self-types="./feye.d.ts" */
 
 /**
  * @param {string} input
@@ -159,7 +159,7 @@ export function version() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_now_5b655dac16835dec: function() {
+        __wbg_now_45b67ed21845bb1a: function() {
             const ret = Date.now();
             return ret;
         },
@@ -171,7 +171,7 @@ function __wbg_get_imports() {
     };
     return {
         __proto__: null,
-        "./euleron_bg.js": import0,
+        "./feye_bg.js": import0,
     };
 }
 
@@ -367,7 +367,7 @@ async function __wbg_init(module_or_path) {
     }
 
     if (module_or_path === undefined) {
-        module_or_path = new URL('euleron_bg.wasm', import.meta.url);
+        module_or_path = new URL('feye_bg.wasm', import.meta.url);
     }
     const imports = __wbg_get_imports();
 

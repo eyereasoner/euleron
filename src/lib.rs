@@ -1,4 +1,4 @@
-//! Euleron core Notation3 reasoner.
+//! Feye core Notation3 reasoner.
 //!
 //! This crate intentionally keeps the public API small: parse one or more N3
 //! sources, run forward-chaining rules, and render newly-derived triples.
@@ -16,7 +16,7 @@ pub mod reasoner;
 pub mod wasm;
 
 pub use ast::{Document, Literal, Rule, SourceRef, Term, Triple};
-pub use error::{EuleronError, Result};
+pub use error::{FeyeError, Result};
 pub use parser::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf_message_log};
 pub use rdf_compat::{parse_rdf12, RdfFormat};
 pub use printing::{document_debug, rdf12_json, rdf_result_to_string, result_to_string, triples_to_n3, triples_to_trig};
@@ -36,7 +36,7 @@ pub fn reason(input: &str) -> Result<String> {
     };
     let result = reason_document(&doc, &ReasonerOptions::default());
     if let Some(summary) = result.incomplete_summary() {
-        return Err(EuleronError::new(summary));
+        return Err(FeyeError::new(summary));
     }
     Ok(result_to_string(&doc.prefixes, &result.derived))
 }

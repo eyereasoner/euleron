@@ -4,7 +4,7 @@
 #
 # This file is the data half of the runnable example:
 #
-#   euleron -r examples/rdf-message-ldes-incremental.n3 examples/input/rdf-message-ldes-incremental.trig
+#   feye -r examples/rdf-message-ldes-incremental.n3 examples/input/rdf-message-ldes-incremental.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../../README.md#rdf-messages
@@ -41,7 +41,7 @@ in:run a see:InputDataset ;
   see:title "RDF Message LDES Incremental Repair" ;
   see:sourceFile "examples/rdf-message-ldes-incremental.n3" ;
   see:description "Forty LDES members serialized as RDF Messages; the rules use a sequence bookmark to reason only over the new tail." ;
-  see:compiler "Euleron RDF Message Log input" .
+  see:compiler "Feye RDF Message Log input" .
 
 MESSAGE
 

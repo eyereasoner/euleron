@@ -2,7 +2,7 @@
 
 This deck follows a small RDF Message window where one door is reported both open and closed. The [rules](../rdf-message-window-repair.n3) inspect the replayed [message log input](../input/rdf-message-window-repair.trig), the [golden output](../output/rdf-message-window-repair.md) shows the repaired conclusion, and the [README section](../../README.md#rdf-messages) explains how `-r` exposes message payloads without silently merging them.
 
-The goal is to show how Euleron can reason over a replayed RDF Message Log, keep message boundaries visible, detect an inconsistency in a sliding window, and materialize a repaired conclusion instead of blindly merging contradictory facts.
+The goal is to show how Feye can reason over a replayed RDF Message Log, keep message boundaries visible, detect an inconsistency in a sliding window, and materialize a repaired conclusion instead of blindly merging contradictory facts.
 
 ---
 
@@ -60,7 +60,7 @@ VERSION "1.2-messages"
 
 Each `MESSAGE` delimiter separates one communication event from the next.
 
-Euleron parses those delimiters before ordinary reasoning starts and exposes a replay model with `eymsg:` terms:
+Feye parses those delimiters before ordinary reasoning starts and exposes a replay model with `eymsg:` terms:
 
 - one stream,
 - one envelope per message,

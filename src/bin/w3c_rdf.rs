@@ -1,5 +1,5 @@
-use euleron::ast::{Literal, Term, Triple, LOG_NAME_OF, RDF_FIRST, RDF_NIL, RDF_REST, RDF_TYPE};
-use euleron::{parse_rdf12, Document, RdfFormat};
+use feye::ast::{Literal, Term, Triple, LOG_NAME_OF, RDF_FIRST, RDF_NIL, RDF_REST, RDF_TYPE};
+use feye::{parse_rdf12, Document, RdfFormat};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
@@ -220,7 +220,7 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
 }
 
 fn print_help() {
-    println!("Rust-only W3C RDF 1.x manifest runner for Euleron");
+    println!("Rust-only W3C RDF 1.x manifest runner for Feye");
     println!();
     println!("Usage:");
     println!("  cargo run --bin w3c_rdf -- [options] [manifest-url-or-path ...]");
@@ -1231,14 +1231,14 @@ fn compact_type(t: &str) -> String {
 }
 
 fn rdf_manifests_to_earl(runs: &[ManifestRun]) -> String {
-    let asserted_by = "<https://github.com/eyereasoner/euleron>";
+    let asserted_by = "<https://github.com/eyereasoner/feye>";
     let mut lines = vec![
         "@prefix earl: <http://www.w3.org/ns/earl#> .".to_string(),
         "@prefix doap: <http://usefulinc.com/ns/doap#> .".to_string(),
         "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .".to_string(),
         String::new(),
         format!("{asserted_by} a earl:Software, doap:Project ;"),
-        "  doap:name \"Euleron\" .".to_string(),
+        "  doap:name \"Feye\" .".to_string(),
         String::new(),
     ];
     for run in runs {

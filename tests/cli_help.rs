@@ -2,13 +2,13 @@ use std::process::Command;
 
 #[test]
 fn no_arguments_is_the_same_as_short_help() {
-    let no_args = Command::new(env!("CARGO_BIN_EXE_euleron"))
+    let no_args = Command::new(env!("CARGO_BIN_EXE_feye"))
         .output()
-        .expect("run euleron without arguments");
-    let short_help = Command::new(env!("CARGO_BIN_EXE_euleron"))
+        .expect("run feye without arguments");
+    let short_help = Command::new(env!("CARGO_BIN_EXE_feye"))
         .arg("-h")
         .output()
-        .expect("run euleron -h");
+        .expect("run feye -h");
 
     assert_eq!(no_args.status, short_help.status);
     assert_eq!(no_args.stdout, short_help.stdout);
@@ -23,14 +23,14 @@ fn reasoning_limit_flags_are_not_accepted() {
         "--max-backward-depth",
         "--max-backward-solutions",
     ] {
-        let output = Command::new(env!("CARGO_BIN_EXE_euleron"))
+        let output = Command::new(env!("CARGO_BIN_EXE_feye"))
             .args([flag, "1"])
             .output()
-            .expect("run euleron with removed flag");
+            .expect("run feye with removed flag");
 
         assert!(!output.status.success(), "{flag} should be rejected");
         assert_eq!(output.stdout, b"");
         let stderr = String::from_utf8_lossy(&output.stderr);
-        assert_eq!(stderr.as_ref(), format!("euleron: unknown option {flag}\n"));
+        assert_eq!(stderr.as_ref(), format!("feye: unknown option {flag}\n"));
     }
 }

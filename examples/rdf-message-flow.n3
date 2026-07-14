@@ -4,7 +4,7 @@
 #
 # Run as:
 #
-#   euleron -r examples/rdf-message-flow.n3 examples/input/rdf-message-flow.trig
+#   feye -r examples/rdf-message-flow.n3 examples/input/rdf-message-flow.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../README.md#rdf-messages
@@ -17,12 +17,12 @@
 #
 # The companion sidecar is now a true RDF Message Log: it uses
 # VERSION "1.2-messages" and MESSAGE delimiters. In RDF compatibility mode,
-# Euleron parses those delimiters internally and materializes a replay view using
+# Feye parses those delimiters internally and materializes a replay view using
 # the eymsg: vocabulary: a stream resource, ordered envelopes, offsets,
 # next-envelope links, and one named payload graph per non-empty message.
 #
 # The rules below therefore no longer invent envelope facts in the TriG file.
-# They consume the replay view that Euleron exposes, inspect each payload with
+# They consume the replay view that Feye exposes, inspect each payload with
 # log:includes inside its own message formula, and let the empty heartbeat flow
 # through without a payload graph.
 
@@ -36,7 +36,7 @@
 @prefix log: <http://www.w3.org/2000/10/swap/log#>.
 @prefix string: <http://www.w3.org/2000/10/swap/string#>.
 
-# Euleron's parser-level replay exposes the first envelope; that starts the
+# Feye's parser-level replay exposes the first envelope; that starts the
 # consumer-visible flow. Later envelopes are released only by the sink rule.
 {
   ?Stream a eymsg:RDFMessageStream;
@@ -131,7 +131,7 @@
 }.
 
 # Continuous-flow rule: reaching the sink releases the next replayed envelope
-# into ingress. The ordering link comes from Euleron's internal MESSAGE replay,
+# into ingress. The ordering link comes from Feye's internal MESSAGE replay,
 # not from the sidecar data.
 {
   ?Envelope :atStage :sink;
@@ -174,7 +174,7 @@
   ?M5 :atStage :sink;
     flow:payloadResult ?FifthResult;
     :route :alertSink.
-  ("# rdf-message-flow\n\n## Source files\n\n- [N3 rules](../rdf-message-flow.n3)\n- [Input RDF Message Log](../input/rdf-message-flow.trig)\n\n## Answer\nContinuous RDF Message flow accepted: %d ordered parser-replayed message envelopes moved through the ingest → validate → interpret → route → sink pipeline. The threshold was %d, so results %s and %s were archived, the empty heartbeat kept the stream alive, and results %s and %s were emitted as alerts.\n\n## Explanation\nThe input sidecar is now a true RDF Message Log using VERSION \\\"1.2-messages\\\" and MESSAGE delimiters. Euleron parses the log internally into an eymsg: replay view with ordered envelopes, offsets, next-envelope links, and one payload graph per non-empty message. Only the first replayed envelope starts at ingress; each envelope must reach :sink before the continuous-flow rule releases its eymsg:nextEnvelope. Observation payloads are inspected with log:includes inside their own message formula, and the delimiter-only third message is replayed as an empty heartbeat. This keeps message boundaries in the parser/runtime instead of modeling them by hand in the TriG sidecar." ?Count ?Threshold ?FirstResult ?SecondResult ?FourthResult ?FifthResult) string:format ?Block.
+  ("# rdf-message-flow\n\n## Source files\n\n- [N3 rules](../rdf-message-flow.n3)\n- [Input RDF Message Log](../input/rdf-message-flow.trig)\n\n## Answer\nContinuous RDF Message flow accepted: %d ordered parser-replayed message envelopes moved through the ingest → validate → interpret → route → sink pipeline. The threshold was %d, so results %s and %s were archived, the empty heartbeat kept the stream alive, and results %s and %s were emitted as alerts.\n\n## Explanation\nThe input sidecar is now a true RDF Message Log using VERSION \\\"1.2-messages\\\" and MESSAGE delimiters. Feye parses the log internally into an eymsg: replay view with ordered envelopes, offsets, next-envelope links, and one payload graph per non-empty message. Only the first replayed envelope starts at ingress; each envelope must reach :sink before the continuous-flow rule releases its eymsg:nextEnvelope. Observation payloads are inspected with log:includes inside their own message formula, and the delimiter-only third message is replayed as an empty heartbeat. This keeps message boundaries in the parser/runtime instead of modeling them by hand in the TriG sidecar." ?Count ?Threshold ?FirstResult ?SecondResult ?FourthResult ?FifthResult) string:format ?Block.
 } => {
   :rdfMessageFlowExample log:outputString ?Block.
   :rdfMessageFlowExample :demonstrates :ContinuousFlow, :BackPressureRelease, :AtomicMessageContext, :HeartbeatInFlow, :ThresholdRouting, :RDFMessageLogReplay.

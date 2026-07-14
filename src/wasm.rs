@@ -1,6 +1,6 @@
 use wasm_bindgen::prelude::*;
 
-use crate::error::{EuleronError, Result};
+use crate::error::{FeyeError, Result};
 use crate::parser::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf_message_log};
 use crate::printing::{rdf_result_to_string, result_to_string};
 use crate::proof::proof_to_n3;
@@ -36,7 +36,7 @@ pub fn reason_with_data_report(program: &str, data: &str, proof: bool, rdf: bool
 }
 
 fn run(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &str) -> Result<String> {
-    run_report(program, data, proof, rdf, rdf_format).map_err(|err| EuleronError::new(err.display))
+    run_report(program, data, proof, rdf, rdf_format).map_err(|err| FeyeError::new(err.display))
 }
 
 fn run_report(program: &str, data: &str, proof: bool, rdf: bool, rdf_format: &str) -> std::result::Result<String, PlaygroundError> {
@@ -79,7 +79,7 @@ struct PlaygroundError {
 }
 
 impl PlaygroundError {
-    fn from_error(err: EuleronError, source: &str, editor: &'static str, label: &str) -> Self {
+    fn from_error(err: FeyeError, source: &str, editor: &'static str, label: &str) -> Self {
         let (line, column) = err.offset.map(|offset| line_col(source, offset)).unwrap_or((0, 0));
         Self {
             code: "parse_error",
@@ -193,7 +193,7 @@ fn rdf_format_from_playground(format: &str, input: &str) -> Result<RdfFormat> {
         "trig" => Ok(RdfFormat::Trig),
         "nt" | "n-triples" | "ntriples" => Ok(RdfFormat::NTriples),
         "nq" | "n-quads" | "nquads" => Ok(RdfFormat::NQuads),
-        other => Err(EuleronError::new(format!("unknown RDF format for playground: {}", other))),
+        other => Err(FeyeError::new(format!("unknown RDF format for playground: {}", other))),
     }
 }
 

@@ -117,7 +117,7 @@ impl HarnessConfig {
         let mut list = false;
         let mut help = false;
         let mut colour = ColourMode::Auto;
-        let mut verbose = env_flag("EULERON_W3C_RDF_VERBOSE");
+        let mut verbose = env_flag("FEYE_W3C_RDF_VERBOSE");
         let mut i = 0;
         while i < args.len() {
             let arg = args[i].to_string_lossy();
@@ -205,8 +205,8 @@ impl QuietGuard {
         if verbose {
             return QuietGuard { previous: None, changed: false };
         }
-        let previous = env::var_os("EULERON_W3C_RDF_QUIET");
-        env::set_var("EULERON_W3C_RDF_QUIET", "1");
+        let previous = env::var_os("FEYE_W3C_RDF_QUIET");
+        env::set_var("FEYE_W3C_RDF_QUIET", "1");
         QuietGuard { previous, changed: true }
     }
 }
@@ -217,28 +217,28 @@ impl Drop for QuietGuard {
             return;
         }
         if let Some(previous) = self.previous.take() {
-            env::set_var("EULERON_W3C_RDF_QUIET", previous);
+            env::set_var("FEYE_W3C_RDF_QUIET", previous);
         } else {
-            env::remove_var("EULERON_W3C_RDF_QUIET");
+            env::remove_var("FEYE_W3C_RDF_QUIET");
         }
     }
 }
 
 fn print_help() {
-    println!("Custom W3C RDF conformance harness for Euleron");
+    println!("Custom W3C RDF conformance harness for Feye");
     println!();
     println!("Usage:");
     println!("  cargo test --test w3c_rdf");
     println!("  cargo test --test w3c_rdf rdf11_turtle");
     println!();
     println!("The harness prints libtest-style lines with coloured ok/FAILED status words.");
-    println!("It is local-only by default; use EULERON_W3C_RDF_REFRESH=1 to bootstrap or refresh tests/w3c_rdf/rdf-tests/.");
+    println!("It is local-only by default; use FEYE_W3C_RDF_REFRESH=1 to bootstrap or refresh tests/w3c_rdf/rdf-tests/.");
     println!();
     println!("Useful environment variables:");
-    println!("  EULERON_W3C_RDF_REFRESH=1   bootstrap/refresh the local W3C RDF mirror");
-    println!("  EULERON_W3C_RDF_VERBOSE=1   show runner progress in addition to harness lines");
-    println!("  EULERON_W3C_RDF_FILTER=txt  filter W3C cases inside a selected manifest");
-    println!("  EULERON_W3C_RDF_EARL=PATH   choose the EARL report output path");
+    println!("  FEYE_W3C_RDF_REFRESH=1   bootstrap/refresh the local W3C RDF mirror");
+    println!("  FEYE_W3C_RDF_VERBOSE=1   show runner progress in addition to harness lines");
+    println!("  FEYE_W3C_RDF_FILTER=txt  filter W3C cases inside a selected manifest");
+    println!("  FEYE_W3C_RDF_EARL=PATH   choose the EARL report output path");
 }
 
 fn env_flag(name: &str) -> bool {

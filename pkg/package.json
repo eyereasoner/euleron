@@ -1,5 +1,5 @@
 {
-  "name": "euleron",
+  "name": "feye",
   "type": "module",
   "collaborators": [
     "Jos De Roo"
@@ -9,15 +9,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/eyereasoner/euleron"
+    "url": "https://github.com/eyereasoner/feye"
   },
   "files": [
-    "euleron_bg.wasm",
-    "euleron.js",
-    "euleron.d.ts"
+    "feye_bg.wasm",
+    "feye.js",
+    "feye.d.ts"
   ],
-  "main": "euleron.js",
-  "types": "euleron.d.ts",
+  "main": "feye.js",
+  "types": "feye.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

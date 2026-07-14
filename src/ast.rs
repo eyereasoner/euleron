@@ -10,12 +10,12 @@ pub const LOG_QUERY: &str = "http://www.w3.org/2000/10/swap/log#query";
 pub const LOG_EQUAL_TO: &str = "http://www.w3.org/2000/10/swap/log#equalTo";
 pub const LOG_NOT_EQUAL_TO: &str = "http://www.w3.org/2000/10/swap/log#notEqualTo";
 pub const LOG_IMPLIES: &str = "http://www.w3.org/2000/10/swap/log#implies";
-/// Internal predicate used to preserve N3 `<=` rule polarity.
-/// It is printed as `<=` and promoted to a backward rule, not exposed as a normal RDF predicate.
-pub const LOG_IMPLIED_BY: &str = "urn:euleron:impliedBy";
+/// Standard SWAP predicate used to preserve N3 `<=` rule polarity.
+/// It is printed as `<=` and promoted to a backward rule.
+pub const LOG_IMPLIED_BY: &str = "http://www.w3.org/2000/10/swap/log#impliedBy";
 /// Internal marker used for rule conclusions like `=> ?F`, where the
 /// RHS resolves to a quoted formula whose contents should be unquoted.
-pub const EULERON_UNQUOTE: &str = "urn:euleron:unquote";
+pub const FEYE_UNQUOTE: &str = "urn:feye:unquote";
 pub const LOG_COLLECT_ALL_IN: &str = "http://www.w3.org/2000/10/swap/log#collectAllIn";
 pub const LOG_FOR_ALL_IN: &str = "http://www.w3.org/2000/10/swap/log#forAllIn";
 pub const LOG_CONCLUSION: &str = "http://www.w3.org/2000/10/swap/log#conclusion";
@@ -230,7 +230,7 @@ pub fn default_prefixes() -> BTreeMap<String, String> {
     m.insert("time".to_string(), "http://www.w3.org/2000/10/swap/time#".to_string());
     m.insert("crypto".to_string(), "http://www.w3.org/2000/10/swap/crypto#".to_string());
     m.insert("eymsg".to_string(), "https://eyereasoner.github.io/eyeling/vocab/message#".to_string());
-    m.insert("dt".to_string(), "https://eyereasoner.github.io/euleron/datatype#".to_string());
+    m.insert("dt".to_string(), "https://eyereasoner.github.io/feye/datatype#".to_string());
     m.insert("genid".to_string(), "https://eyereasoner.github.io/.well-known/genid/".to_string());
     m
 }
@@ -238,5 +238,15 @@ pub fn default_prefixes() -> BTreeMap<String, String> {
 impl fmt::Display for Triple {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         write!(f, "{:?} {:?} {:?}", self.s, self.p, self.o)
+    }
+}
+
+#[cfg(test)]
+mod constant_tests {
+    use super::LOG_IMPLIED_BY;
+
+    #[test]
+    fn implied_by_uses_the_swap_log_iri() {
+        assert_eq!(LOG_IMPLIED_BY, "http://www.w3.org/2000/10/swap/log#impliedBy");
     }
 }

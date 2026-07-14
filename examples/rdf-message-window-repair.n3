@@ -4,14 +4,14 @@
 #
 # Run as:
 #
-#   euleron -r examples/rdf-message-window-repair.n3 examples/input/rdf-message-window-repair.trig
+#   feye -r examples/rdf-message-window-repair.n3 examples/input/rdf-message-window-repair.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../README.md#rdf-messages
 #
 # This example is inspired by incremental, inconsistency-resilient reasoning over
 # sliding ABox streams.  The input is a true RDF Message Log: each MESSAGE
-# boundary is parsed by Euleron into an eymsg: envelope with one payload graph per
+# boundary is parsed by Feye into an eymsg: envelope with one payload graph per
 # non-empty message.
 #
 # The rules below keep the message boundaries visible, select two overlapping
@@ -26,7 +26,7 @@
 @prefix log: <http://www.w3.org/2000/10/swap/log#>.
 @prefix string: <http://www.w3.org/2000/10/swap/string#>.
 
-# Euleron's parser-level replay gives a static view of the message log: an
+# Feye's parser-level replay gives a static view of the message log: an
 # ordered list, explicit offsets, and next-envelope links.
 {
   ?Stream a eymsg:RDFMessageStream;
@@ -159,7 +159,7 @@
     :materializedActionText ?ActionText.
   ?State :stateText ?StateText.
   ?PreferredMessage :priority ?PreferredPriority.
-  ("# rdf-message-window-repair\n\n## Source files\n\n- [N3 rules](../rdf-message-window-repair.n3)\n- [Input RDF Message Log](../input/rdf-message-window-repair.trig)\n- [Story deck](../deck/rdf-message-window-repair.md)\n\n## Answer\nSliding-window RDF Message repair accepted: %d parser-replayed messages produced two overlapping %d-message ABox windows. The current window retained two envelopes from the previous window, expired one old door reading, and added one new safety-controller reading. Its raw graph-level materialization was inconsistent because doorA was both open and closed. The preferred repair kept the priority-%d assertion from %s, resolved the door state to %s, and materialized the action: %s.\n\n## Explanation\nThe RDF Message Log uses VERSION \\\"1.2-messages\\\" and MESSAGE delimiters. Euleron parses those boundaries into eymsg: envelopes and payload graphs; the rules inspect each payload with log:includes rather than merging message bodies by hand. The example mirrors a sliding-window stream-reasoning pattern: when the window advances, overlapping message evidence is retained, an expired assertion leaves the window, an entering assertion can change the materialization, and a preferred repair fixes a noisy open/closed contradiction before the final action is produced." ?Count ?WindowSize ?PreferredPriority ?PreferredSource ?StateText ?ActionText) string:format ?Block.
+  ("# rdf-message-window-repair\n\n## Source files\n\n- [N3 rules](../rdf-message-window-repair.n3)\n- [Input RDF Message Log](../input/rdf-message-window-repair.trig)\n- [Story deck](../deck/rdf-message-window-repair.md)\n\n## Answer\nSliding-window RDF Message repair accepted: %d parser-replayed messages produced two overlapping %d-message ABox windows. The current window retained two envelopes from the previous window, expired one old door reading, and added one new safety-controller reading. Its raw graph-level materialization was inconsistent because doorA was both open and closed. The preferred repair kept the priority-%d assertion from %s, resolved the door state to %s, and materialized the action: %s.\n\n## Explanation\nThe RDF Message Log uses VERSION \\\"1.2-messages\\\" and MESSAGE delimiters. Feye parses those boundaries into eymsg: envelopes and payload graphs; the rules inspect each payload with log:includes rather than merging message bodies by hand. The example mirrors a sliding-window stream-reasoning pattern: when the window advances, overlapping message evidence is retained, an expired assertion leaves the window, an entering assertion can change the materialization, and a preferred repair fixes a noisy open/closed contradiction before the final action is produced." ?Count ?WindowSize ?PreferredPriority ?PreferredSource ?StateText ?ActionText) string:format ?Block.
 } => {
   :rdfMessageWindowRepairExample log:outputString ?Block.
   :rdfMessageWindowRepairExample :demonstrates :RDFMessageLogReplay, :SlidingWindow, :OverlappingWindows, :ABoxStream, :RawDoorInconsistency, :PreferredRepair, :IncrementalMaterialization.

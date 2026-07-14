@@ -4,7 +4,7 @@
 #
 # Run as:
 #
-#   euleron -r examples/rdf-message-microgrid.n3 examples/input/rdf-message-microgrid.trig
+#   feye -r examples/rdf-message-microgrid.n3 examples/input/rdf-message-microgrid.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../README.md#rdf-messages
@@ -14,7 +14,7 @@
 # describes battery and solar status, another describes flexible demand that may
 # be deferred, and a fourth message is an empty heartbeat.
 #
-# The companion input is now a true parser-level RDF Message Log. Euleron handles
+# The companion input is now a true parser-level RDF Message Log. Feye handles
 # VERSION "1.2-messages" and MESSAGE delimiters internally, then exposes a replay
 # view using eymsg: ordered envelopes and payload graphs. The N3 rules therefore
 # focus on the domain decision rather than recreating log replay by hand.
@@ -123,7 +123,7 @@
     :deferrableWatts ?ShedWatts;
     :protectedBudgetWatts ?ProtectedBudget;
     :resilienceAction :protectClinic.
-  ("# rdf-message-microgrid\n\n## Source files\n\n- [N3 rules](../rdf-message-microgrid.n3)\n- [Input RDF Message Log](../input/rdf-message-microgrid.trig)\n\n## Answer\nStorm clinic microgrid accepted: %d parser-replayed RDF Messages were processed atomically. Critical care needs %d W, current battery plus solar gives %d W, and deferring the EV chargers frees %d W, so the protected budget is %d W. The reasoned action is to keep the oxygen concentrator and vaccine fridge online, while deferring EV charging.\n\n## Why this is an RDF Message Log example\nThe input now uses VERSION \\\"1.2-messages\\\" and MESSAGE delimiters. Euleron parses those boundaries internally into an eymsg: replay view, so the rules do not need hand-written application envelopes. Each non-empty message is inspected with log:includes inside its own payload formula, and the final delimiter-only message is replayed as an empty heartbeat. The decision combines only the derived conclusions needed for load shedding while keeping the explanation tied to explicit message boundaries." ?Count ?CriticalWatts ?AvailableWatts ?ShedWatts ?ProtectedBudget) string:format ?Block.
+  ("# rdf-message-microgrid\n\n## Source files\n\n- [N3 rules](../rdf-message-microgrid.n3)\n- [Input RDF Message Log](../input/rdf-message-microgrid.trig)\n\n## Answer\nStorm clinic microgrid accepted: %d parser-replayed RDF Messages were processed atomically. Critical care needs %d W, current battery plus solar gives %d W, and deferring the EV chargers frees %d W, so the protected budget is %d W. The reasoned action is to keep the oxygen concentrator and vaccine fridge online, while deferring EV charging.\n\n## Why this is an RDF Message Log example\nThe input now uses VERSION \\\"1.2-messages\\\" and MESSAGE delimiters. Feye parses those boundaries internally into an eymsg: replay view, so the rules do not need hand-written application envelopes. Each non-empty message is inspected with log:includes inside its own payload formula, and the final delimiter-only message is replayed as an empty heartbeat. The decision combines only the derived conclusions needed for load shedding while keeping the explanation tied to explicit message boundaries." ?Count ?CriticalWatts ?AvailableWatts ?ShedWatts ?ProtectedBudget) string:format ?Block.
 } => {
   :rdfMessageMicrogridExample log:outputString ?Block.
   :rdfMessageMicrogridExample :demonstrates :ParserLevelMessageLog, :AtomicMessageContext, :EmptyHeartbeat, :ReplayableMessageLog, :ResilientDecisionSupport.

@@ -4,14 +4,14 @@
 #
 # This file is the data half of the runnable example:
 #
-#   euleron -r examples/rdf-message-flow.n3 examples/input/rdf-message-flow.trig
+#   feye -r examples/rdf-message-flow.n3 examples/input/rdf-message-flow.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../../README.md#rdf-messages
 #
 # It is a parser-level RDF Message Log using the RDF 1.2 Messages draft syntax:
 # VERSION "1.2-messages" selects message-log parsing and MESSAGE delimiters
-# separate the ordered RDF Messages. Euleron replays this log internally by
+# separate the ordered RDF Messages. Feye replays this log internally by
 # materializing message envelopes and one payload graph per non-empty message.
 # The sidecar itself does not contain application-level envelope facts.
 #
@@ -50,8 +50,8 @@ in:run a see:InputDataset ;
   see:name "rdf_message_flow" ;
   see:title "RDF Message Flow" ;
   see:sourceFile "examples/rdf-message-flow.n3" ;
-  see:description "A true RDF 1.2 Message Log sidecar. Euleron parses VERSION 1.2-messages and MESSAGE delimiters into replayable internal message envelopes." ;
-  see:compiler "Euleron RDF Message Log input" .
+  see:description "A true RDF 1.2 Message Log sidecar. Feye parses VERSION 1.2-messages and MESSAGE delimiters into replayable internal message envelopes." ;
+  see:compiler "Feye RDF Message Log input" .
 
 MESSAGE
 

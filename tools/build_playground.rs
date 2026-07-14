@@ -44,7 +44,7 @@ fn run() -> io::Result<()> {
     }
 
     println!("Cleaned generated package metadata not needed by GitHub Pages.");
-    println!("Commit at least: playground.html, pkg/euleron.js, pkg/euleron_bg.wasm");
+    println!("Commit at least: playground.html, pkg/feye.js, pkg/feye_bg.wasm");
     Ok(())
 }
 
