@@ -1,4 +1,4 @@
-use crate::error::{EyeronError, Result};
+use crate::error::{EuleronError, Result};
 
 #[derive(Debug, Clone, PartialEq)]
 pub enum TokenKind {
@@ -151,31 +151,31 @@ impl<'a> Lexer<'a> {
                 return Ok(());
             }
             if ch == '\\' {
-                let Some(esc) = self.peek() else { return Err(EyeronError::at("unterminated IRI escape", offset)); };
+                let Some(esc) = self.peek() else { return Err(EuleronError::at("unterminated IRI escape", offset)); };
                 self.bump();
                 if esc == 'u' || esc == 'U' {
                     let count = if esc == 'u' { 4 } else { 8 };
                     let mut hex = String::new();
                     for _ in 0..count {
-                        let Some(h) = self.peek() else { return Err(EyeronError::at("unterminated Unicode escape", offset)); };
+                        let Some(h) = self.peek() else { return Err(EuleronError::at("unterminated Unicode escape", offset)); };
                         self.bump();
                         hex.push(h);
                     }
-                    let code = u32::from_str_radix(&hex, 16).map_err(|_| EyeronError::at("invalid Unicode escape", offset))?;
-                    let Some(c) = char::from_u32(code) else { return Err(EyeronError::at("invalid Unicode scalar value", offset)); };
-                    if is_forbidden_iri_char(c) { return Err(EyeronError::at("forbidden character in IRI reference", offset)); }
+                    let code = u32::from_str_radix(&hex, 16).map_err(|_| EuleronError::at("invalid Unicode escape", offset))?;
+                    let Some(c) = char::from_u32(code) else { return Err(EuleronError::at("invalid Unicode scalar value", offset)); };
+                    if is_forbidden_iri_char(c) { return Err(EuleronError::at("forbidden character in IRI reference", offset)); }
                     value.push(c);
                 } else {
-                    return Err(EyeronError::at(format!("invalid IRI escape \\{}", esc), offset));
+                    return Err(EuleronError::at(format!("invalid IRI escape \\{}", esc), offset));
                 }
             } else {
                 if is_forbidden_iri_char(ch) {
-                    return Err(EyeronError::at("forbidden character in IRI reference", offset));
+                    return Err(EuleronError::at("forbidden character in IRI reference", offset));
                 }
                 value.push(ch);
             }
         }
-        Err(EyeronError::at("unterminated IRI reference", offset))
+        Err(EuleronError::at("unterminated IRI reference", offset))
     }
 
     fn read_string(&mut self) -> Result<()> {
@@ -185,7 +185,7 @@ impl<'a> Lexer<'a> {
         if triple { self.bump(); self.bump(); }
         let mut value = String::new();
         loop {
-            let Some(ch) = self.peek() else { return Err(EyeronError::at("unterminated string literal", offset)); };
+            let Some(ch) = self.peek() else { return Err(EuleronError::at("unterminated string literal", offset)); };
             self.bump();
             if ch == quote {
                 if triple {
@@ -218,9 +218,9 @@ impl<'a> Lexer<'a> {
                     return Ok(());
                 }
             } else if !triple && matches!(ch, '\n' | '\r') {
-                return Err(EyeronError::at("newline in short string literal", offset));
+                return Err(EuleronError::at("newline in short string literal", offset));
             } else if ch == '\\' {
-                let Some(esc) = self.peek() else { return Err(EyeronError::at("unterminated string escape", offset)); };
+                let Some(esc) = self.peek() else { return Err(EuleronError::at("unterminated string escape", offset)); };
                 self.bump();
                 match esc {
                     'n' => value.push('\n'),
@@ -235,16 +235,16 @@ impl<'a> Lexer<'a> {
                         let count = if esc == 'u' { 4 } else { 8 };
                         let mut hex = String::new();
                         for _ in 0..count {
-                            let Some(h) = self.peek() else { return Err(EyeronError::at("unterminated Unicode escape", offset)); };
+                            let Some(h) = self.peek() else { return Err(EuleronError::at("unterminated Unicode escape", offset)); };
                             self.bump();
                             hex.push(h);
                         }
-                        let code = u32::from_str_radix(&hex, 16).map_err(|_| EyeronError::at("invalid Unicode escape", offset))?;
-                        let Some(c) = char::from_u32(code) else { return Err(EyeronError::at("invalid Unicode scalar value", offset)); };
-                        if is_forbidden_string_char(c) { return Err(EyeronError::at("forbidden character in string literal", offset)); }
+                        let code = u32::from_str_radix(&hex, 16).map_err(|_| EuleronError::at("invalid Unicode escape", offset))?;
+                        let Some(c) = char::from_u32(code) else { return Err(EuleronError::at("invalid Unicode scalar value", offset)); };
+                        if is_forbidden_string_char(c) { return Err(EuleronError::at("forbidden character in string literal", offset)); }
                         value.push(c);
                     }
-                    other => return Err(EyeronError::at(format!("invalid string escape \\{}", other), offset)),
+                    other => return Err(EuleronError::at(format!("invalid string escape \\{}", other), offset)),
                 }
             } else {
                 value.push(ch);
@@ -274,7 +274,7 @@ impl<'a> Lexer<'a> {
             while self.peek().is_some_and(|c| c.is_ascii_digit()) { value.push(self.bump().unwrap()); }
         }
         if self.peek() == Some('.') && self.peek_next().is_some_and(|c| c.is_ascii_digit()) {
-            return Err(EyeronError::at("malformed numeric literal", offset));
+            return Err(EuleronError::at("malformed numeric literal", offset));
         }
         self.tokens.push(Token { kind: TokenKind::Number(value), offset });
         Ok(())
@@ -308,7 +308,7 @@ impl<'a> Lexer<'a> {
             self.bump();
         }
         if word.is_empty() {
-            return Err(EyeronError::at(format!("unexpected character {:?}", self.peek()), offset));
+            return Err(EuleronError::at(format!("unexpected character {:?}", self.peek()), offset));
         }
         let lower = word.to_ascii_lowercase();
         if word.starts_with("@prefix") && word.len() > "@prefix".len() {

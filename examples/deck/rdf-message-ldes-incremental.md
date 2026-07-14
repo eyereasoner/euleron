@@ -43,7 +43,7 @@ MESSAGE
 ...
 ```
 
-Eyeron's `-r` mode preserves those message boundaries as `eymsg:` envelopes and payload graphs.  The rules inspect payloads with `log:includes`, so each member remains scoped to the message that emitted it.
+Euleron's `-r` mode preserves those message boundaries as `eymsg:` envelopes and payload graphs.  The rules inspect payloads with `log:includes`, so each member remains scoped to the message that emitted it.
 
 README: [RDF Messages](../../README.md#rdf-messages)
 
@@ -89,6 +89,6 @@ The materialized action is therefore:
 ## Run it
 
 ```bash
-eyeron -r examples/rdf-message-ldes-incremental.n3 \
+euleron -r examples/rdf-message-ldes-incremental.n3 \
   examples/input/rdf-message-ldes-incremental.trig
 ```

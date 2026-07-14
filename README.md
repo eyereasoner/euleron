@@ -1,19 +1,19 @@
-# Eyeron
+# Euleron
 
-Eyeron is like a calculator for facts. You give it things you know and rules to follow; it figures out what else must be true, and when you ask why, it shows the steps. That makes your data easier to check, share, and build on.
+Euleron is like a calculator for facts. You give it things you know and rules to follow; it figures out what else must be true, and when you ask why, it shows the steps. That makes your data easier to check, share, and build on.
 
-Eyeron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`. The native integration target for structured RDF exchange is RDF Messages.
+Euleron is a Rust command-line and library implementation of a core Notation3/N3 reasoner. It reads one or more N3 files, applies forward rules and goal-directed backward rules, evaluates a practical subset of common N3 built-ins, and writes derived output as N3 or direct text produced by `log:outputString`. The native integration target for structured RDF exchange is RDF Messages.
 
-Eyeron is the Rust reasoner in the Eyereasoner family. **Eyeling** remains the sibling project; this package intentionally uses the `eyeron` crate name and `eyeron` executable name to keep the projects distinct.
+Euleron is the Rust reasoner in the Eyereasoner family. **Eyeling** remains the sibling project; this package intentionally uses the `euleron` crate name and `euleron` executable name to keep the projects distinct.
 
 The crate provides both:
 
-- a command-line program named `eyeron`; and
+- a command-line program named `euleron`; and
 - a library API for embedding the reasoner in Rust applications.
 
 ## Features
 
-Eyeron currently supports the core constructs used by the bundled examples:
+Euleron currently supports the core constructs used by the bundled examples:
 
 - prefixes and bases with common default N3/RDF prefixes;
 - triples, variables, blank nodes, blank-node property lists, literals, RDF lists, and quoted formulas;
@@ -44,12 +44,12 @@ cargo build --release
 The optimized binary will be available at:
 
 ```bash
-target/release/eyeron
+target/release/euleron
 ```
 
 ## Browser playground
 
-Try it online: <https://eyereasoner.github.io/eyeron/playground>
+Try it online: <https://eyereasoner.github.io/euleron/playground>
 
 A browser playground is included as `playground.html`. It uses the same Rust reasoner through WebAssembly. Build the browser package and clean the generated `pkg/` directory with the Cargo helper:
 
@@ -62,8 +62,8 @@ The helper runs `wasm-pack build --target web --out-dir pkg` and removes the gen
 
 ```text
 playground.html
-pkg/eyeron.js
-pkg/eyeron_bg.wasm
+pkg/euleron.js
+pkg/euleron_bg.wasm
 ```
 
 The release build config enables the WebAssembly features used by Rust during `wasm-opt` optimization (`bulk-memory` and nontrapping float-to-int conversions). If you use a very old Binaryen/wasm-opt, update `wasm-pack`/Binaryen first.
@@ -81,7 +81,7 @@ cargo run -- examples/witch.n3
 After a release build, run the binary directly:
 
 ```bash
-target/release/eyeron examples/witch.n3
+target/release/euleron examples/witch.n3
 ```
 
 Run multiple input files as one merged document:
@@ -103,7 +103,7 @@ cargo run -- --help
 cargo run -- --version
 ```
 
-`-r`/`--rdf` enables RDF/TriG input/output compatibility. RDF-compatible input is selected by file extension: Eyeron recognizes `.ttl`, `.nt`, `.nq`, and `.trig`; standard input is parsed as Turtle when `--rdf` is set:
+`-r`/`--rdf` enables RDF/TriG input/output compatibility. RDF-compatible input is selected by file extension: Euleron recognizes `.ttl`, `.nt`, `.nq`, and `.trig`; standard input is parsed as Turtle when `--rdf` is set:
 
 ```bash
 cargo run -- input.ttl
@@ -115,7 +115,7 @@ cargo run -- --rdf --base-iri https://example.org/base - < input.ttl
 
 The CLI exposes the reasoning limits as `--max-iterations`, `--max-match-steps`, `--max-backward-depth`, and `--max-backward-solutions`. Reaching one of these limits makes the command fail with an incomplete-reasoning diagnostic rather than printing a partial closure as if it were complete.
 
-The CLI also accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, `-r`/`--rdf` enables RDF/TriG compatibility, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Eyeron are accepted as no-ops or warnings so existing command lines fail softly during migration.
+The CLI also accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, `-r`/`--rdf` enables RDF/TriG compatibility, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Euleron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
 ## Example
 
@@ -147,15 +147,15 @@ Proof output can be enabled with `-p`/`--proof`:
 cargo run -- --proof examples/socrates.n3
 ```
 
-In proof mode Eyeron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`. Verified built-ins are identified with `pe:builtin`; support that cannot be independently verified is rendered as `pe:unproven` rather than being mislabeled as a fact. Eyeling-style proof goldens are bundled under `examples/proof/`.
+In proof mode Euleron prints an N3 proof document using the `pe:` vocabulary. Each derived triple is connected to a quoted proof graph with `pe:why`, rule applications are marked with `pe:by`, instantiated premises with `pe:uses`, and rule substitutions with `pe:binding`. Verified built-ins are identified with `pe:builtin`; support that cannot be independently verified is rendered as `pe:unproven` rather than being mislabeled as a fact. Eyeling-style proof goldens are bundled under `examples/proof/`.
 
 ## Library use
 
-Add the crate as a dependency from this repository or workspace, then call `eyeron::reason`:
+Add the crate as a dependency from this repository or workspace, then call `euleron::reason`:
 
 ```rust
-fn main() -> eyeron::Result<()> {
-    let output = eyeron::reason(r#"
+fn main() -> euleron::Result<()> {
+    let output = euleron::reason(r#"
       @prefix : <http://example.org/> .
 
       :Socrates a :Man .
@@ -175,9 +175,9 @@ fn main() -> eyeron::Result<()> {
 For lower-level use, parse first and call the reasoner directly. This API returns partial data together with an explicit completion status, reached limits, and structured errors:
 
 ```rust
-use eyeron::{parse_n3, reason_document, result_to_string, ReasonerOptions};
+use euleron::{parse_n3, reason_document, result_to_string, ReasonerOptions};
 
-fn run(input: &str) -> eyeron::Result<String> {
+fn run(input: &str) -> euleron::Result<String> {
     let doc = parse_n3(input, None)?;
     let options = ReasonerOptions {
         max_iterations: 10_000,
@@ -188,18 +188,18 @@ fn run(input: &str) -> eyeron::Result<String> {
     };
     let result = reason_document(&doc, &options);
     if let Some(summary) = result.incomplete_summary() {
-        return Err(eyeron::EyeronError::new(summary));
+        return Err(euleron::EuleronError::new(summary));
     }
     Ok(result_to_string(&doc.prefixes, &result.derived))
 }
 ```
 
-`eyeron::reason` and the CLI reject incomplete runs. Embedders that intentionally want partial results can call `reason_document` and inspect `ReasonerResult::status`, `limits_reached`, `errors`, and `statistics`.
+`euleron::reason` and the CLI reject incomplete runs. Embedders that intentionally want partial results can call `reason_document` and inspect `ReasonerResult::status`, `limits_reached`, `errors`, and `statistics`.
 
 
 ## RDF Messages
 
-RDF Messages support is a primary integration target for Eyeron. Files that use the draft replay syntax
+RDF Messages support is a primary integration target for Euleron. Files that use the draft replay syntax
 
 ```text
 VERSION "1.2-messages"
@@ -210,7 +210,7 @@ MESSAGE
 ...
 ```
 
-are parsed as RDF Message Logs. Eyeron materializes an internal replay view using the `eymsg:` vocabulary:
+are parsed as RDF Message Logs. Euleron materializes an internal replay view using the `eymsg:` vocabulary:
 
 - one `eymsg:RDFMessageStream` resource;
 - one `eymsg:MessageEnvelope` per message boundary;
@@ -269,7 +269,7 @@ The bundled examples include rule, list, string, log, time, algebraic, policy/al
 
 ### W3C RDF 1.x manifests and EARL report
 
-Eyeron keeps RDF manifest work inside Rust. The full W3C RDF sweep lives in `tests/w3c_rdf/` with a thin Cargo integration-test entry point at `tests/w3c_rdf.rs`. It runs the 12 RDF 1.1 / RDF 1.2 manifest roots, follows `mf:include`, executes syntax, eval, and RDF/RDFS entailment cases through Eyeron's shared lexer/parser profiles, and writes an EARL report.
+Euleron keeps RDF manifest work inside Rust. The full W3C RDF sweep lives in `tests/w3c_rdf/` with a thin Cargo integration-test entry point at `tests/w3c_rdf.rs`. It runs the 12 RDF 1.1 / RDF 1.2 manifest roots, follows `mf:include`, executes syntax, eval, and RDF/RDFS entailment cases through Euleron's shared lexer/parser profiles, and writes an EARL report.
 
 The runner uses a local W3C RDF mirror under `tests/w3c_rdf/rdf-tests/`. Network access is disabled by default so `cargo test` cannot silently spend minutes downloading files; if the mirror is missing, the test fails fast with a bootstrap instruction. The W3C RDF sweep is now part of the normal test suite:
 
@@ -300,17 +300,17 @@ reports/w3c-rdf-earl.ttl
 Useful environment variables:
 
 ```bash
-EYERON_W3C_RDF_EARL=reports/w3c-rdf-earl.ttl cargo test --test w3c_rdf
-EYERON_W3C_RDF_FILTER=turtle12 cargo test --test w3c_rdf
-EYERON_W3C_RDF_QUIET=1 cargo test --test w3c_rdf
-EYERON_W3C_RDF_VERBOSE=1 cargo test --test w3c_rdf
-EYERON_W3C_RDF_REFRESH=1 cargo test --test w3c_rdf
-EYERON_W3C_RDF_ONLINE=1 cargo test --test w3c_rdf
-EYERON_W3C_RDF_CACHE_DIR=tests/w3c_rdf/rdf-tests cargo test --test w3c_rdf
+EULERON_W3C_RDF_EARL=reports/w3c-rdf-earl.ttl cargo test --test w3c_rdf
+EULERON_W3C_RDF_FILTER=turtle12 cargo test --test w3c_rdf
+EULERON_W3C_RDF_QUIET=1 cargo test --test w3c_rdf
+EULERON_W3C_RDF_VERBOSE=1 cargo test --test w3c_rdf
+EULERON_W3C_RDF_REFRESH=1 cargo test --test w3c_rdf
+EULERON_W3C_RDF_ONLINE=1 cargo test --test w3c_rdf
+EULERON_W3C_RDF_CACHE_DIR=tests/w3c_rdf/rdf-tests cargo test --test w3c_rdf
 ```
 
 
-During `EYERON_W3C_RDF_REFRESH=1`, the 12 per-manifest harness lines are reported as delegated and the aggregate pass performs the single online mirror refresh. You can still select a subset by passing a substring filter such as `cargo test --test w3c_rdf rdf11_turtle`.
+During `EULERON_W3C_RDF_REFRESH=1`, the 12 per-manifest harness lines are reported as delegated and the aggregate pass performs the single online mirror refresh. You can still select a subset by passing a substring filter such as `cargo test --test w3c_rdf rdf11_turtle`.
 
 The milestone target is **1170/1170 tests passed across 12 manifests**. The per-manifest harness checks assert their expected counts (`70`, `29`, `87`, `27`, `48`, `77`, `313`, `29`, `74`, `356`, `25`, `35`) and the aggregate check asserts `1170`. Keep `tests/w3c_rdf/rdf-tests/` under version control for fast, reproducible local runs. The runner does not introduce a second RDF parser: Turtle, N-Triples, N-Quads, TriG, RDF 1.2 triple terms, and RDF 1.2 annotations are handled as syntax profiles over the same lexer/parser infrastructure used by N3.
 
@@ -340,7 +340,7 @@ The reasoner maintains indexes for grounded fact lookup and includes a fast agen
 
 ## Non-goals
 
-Eyeron targets native Rust execution, command-line use, embedding from Rust, and RDF Messages integration.
+Euleron targets native Rust execution, command-line use, embedding from Rust, and RDF Messages integration.
 
 ## Current limitations
 

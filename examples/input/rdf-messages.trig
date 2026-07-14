@@ -4,19 +4,19 @@
 #
 # This file is the data half of the runnable example:
 #
-#   eyeron -r examples/rdf-messages.n3 examples/input/rdf-messages.trig
+#   euleron -r examples/rdf-messages.n3 examples/input/rdf-messages.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../../README.md#rdf-messages
 #
-# It is a true RDF Message Log. VERSION "1.2-messages" tells Eyeron to parse
+# It is a true RDF Message Log. VERSION "1.2-messages" tells Euleron to parse
 # MESSAGE delimiters as message boundaries before ordinary N3 reasoning starts.
-# Eyeron then materializes an internal eymsg: replay view with ordered envelopes
+# Euleron then materializes an internal eymsg: replay view with ordered envelopes
 # and one payload graph per non-empty message.
 #
 # The second message is deliberately empty. The first and third messages both use
 # the source-local blank-node label _:b0. Because blank-node labels are scoped to
-# each RDF Message, Eyeron rewrites them into distinct internal blank nodes.
+# each RDF Message, Euleron rewrites them into distinct internal blank nodes.
 
 VERSION "1.2-messages"
 PREFIX : <https://eyereasoner.github.io/eyeling/examples/rdf-messages#>
@@ -35,8 +35,8 @@ in:run a see:InputDataset ;
   see:name "rdf_messages" ;
   see:title "RDF Messages" ;
   see:sourceFile "examples/rdf-messages.n3" ;
-  see:description "A true RDF 1.2 Message Log. Eyeron parses VERSION 1.2-messages and MESSAGE delimiters into replayable internal message envelopes." ;
-  see:compiler "Eyeron RDF Message Log input" .
+  see:description "A true RDF 1.2 Message Log. Euleron parses VERSION 1.2-messages and MESSAGE delimiters into replayable internal message envelopes." ;
+  see:compiler "Euleron RDF Message Log input" .
 
 MESSAGE
 

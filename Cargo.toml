@@ -1,25 +1,25 @@
 [package]
-name = "eyeron"
+name = "euleron"
 version = "0.3.14"
 edition = "2021"
-default-run = "eyeron"
+default-run = "euleron"
 authors = ["Jos De Roo"]
 license = "MIT"
 description = "A native Rust Notation3 reasoner."
-repository = "https://github.com/eyereasoner/eyeron"
+repository = "https://github.com/eyereasoner/euleron"
 
 [lib]
-name = "eyeron"
+name = "euleron"
 path = "src/lib.rs"
 crate-type = ["rlib", "cdylib"]
 
 [[bin]]
-name = "eyeron"
+name = "euleron"
 path = "src/main.rs"
 test = false
 
 [[bin]]
-name = "eyeron-playground-build"
+name = "euleron-playground-build"
 path = "tools/build_playground.rs"
 test = false
 

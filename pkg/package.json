@@ -1,5 +1,5 @@
 {
-  "name": "eyeron",
+  "name": "euleron",
   "type": "module",
   "collaborators": [
     "Jos De Roo"
@@ -9,15 +9,15 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/eyereasoner/eyeron"
+    "url": "https://github.com/eyereasoner/euleron"
   },
   "files": [
-    "eyeron_bg.wasm",
-    "eyeron.js",
-    "eyeron.d.ts"
+    "euleron_bg.wasm",
+    "euleron.js",
+    "euleron.d.ts"
   ],
-  "main": "eyeron.js",
-  "types": "eyeron.d.ts",
+  "main": "euleron.js",
+  "types": "euleron.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

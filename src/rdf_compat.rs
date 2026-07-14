@@ -4,7 +4,7 @@ use crate::parser;
 
 /// RDF syntax families accepted by the RDF compatibility layer.
 ///
-/// Eyeron's core language is N3.  These formats are kept behind this module so
+/// Euleron's core language is N3.  These formats are kept behind this module so
 /// callers can import RDF 1.x/Turtle/TriG/N-Triples/N-Quads input without making
 /// the public parser API look like multiple peer parser languages.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -27,7 +27,7 @@ impl RdfFormat {
     }
 }
 
-/// Parse RDF 1.x compatible syntaxes into Eyeron's N3 document model.
+/// Parse RDF 1.x compatible syntaxes into Euleron's N3 document model.
 ///
 /// This is intentionally a compatibility adapter around the existing, W3C-tested
 /// RDF parser behavior.  The N3 entry point remains `parser::parse_n3`; RDF

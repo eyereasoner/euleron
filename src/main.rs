@@ -1,9 +1,9 @@
-use eyeron::error::{EyeronError, Result};
-use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, RdfFormat};
-use eyeron::printing::{document_debug, rdf_result_to_string, result_to_string};
-use eyeron::proof::proof_to_n3;
-use eyeron::reasoner::{reason, ReasonerOptions};
-use eyeron::Document;
+use euleron::error::{EuleronError, Result};
+use euleron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, RdfFormat};
+use euleron::printing::{document_debug, rdf_result_to_string, result_to_string};
+use euleron::proof::proof_to_n3;
+use euleron::reasoner::{reason, ReasonerOptions};
+use euleron::Document;
 use std::env;
 use std::fs;
 use std::io::{self, Read};
@@ -28,7 +28,7 @@ struct CliOptions {
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("eyeron: {}", err);
+        eprintln!("euleron: {}", err);
         std::process::exit(1);
     }
 }
@@ -37,7 +37,7 @@ fn run() -> Result<()> {
     let opt = parse_args(env::args().skip(1).collect())?;
 
     if opt.stream {
-        eprintln!("warning: --stream is accepted; Eyeron currently emits after the fixpoint is reached");
+        eprintln!("warning: --stream is accepted; Euleron currently emits after the fixpoint is reached");
     }
     if opt.stream_messages {
         // RDF Message Logs are auto-detected by VERSION/MESSAGE delimiters.
@@ -58,7 +58,7 @@ fn run() -> Result<()> {
         };
         match parsed {
             Ok(doc) => merged.merge(doc),
-            Err(err) => return Err(EyeronError::new(err.with_source_location(text, label))),
+            Err(err) => return Err(EuleronError::new(err.with_source_location(text, label))),
         }
     }
 
@@ -76,7 +76,7 @@ fn run() -> Result<()> {
     }
     let result = reason(&merged, &reasoner_options);
     if let Some(summary) = result.incomplete_summary() {
-        return Err(EyeronError::new(summary));
+        return Err(EuleronError::new(summary));
     }
     if opt.proof {
         print!("{}", proof_to_n3(&merged.prefixes, &result));
@@ -108,13 +108,13 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             "--builtin" | "--store" | "--store-path" => {
                 let flag = args[i].clone();
                 i += 1;
-                if i >= args.len() { return Err(EyeronError::new(format!("{} requires a value", flag))); }
-                eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Eyeron", flag);
+                if i >= args.len() { return Err(EuleronError::new(format!("{} requires a value", flag))); }
+                eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Euleron", flag);
             }
             "--stream-messages" => opt.stream_messages = true,
             "--base-iri" | "--base" => {
                 i += 1;
-                if i >= args.len() { return Err(EyeronError::new(format!("{} requires a value", args[i - 1]))); }
+                if i >= args.len() { return Err(EuleronError::new(format!("{} requires a value", args[i - 1]))); }
                 opt.base_iri = Some(args[i].clone());
             }
             "--max-iterations" => {
@@ -130,10 +130,10 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 opt.max_backward_solutions_per_goal = Some(parse_usize_option(&args, &mut i)?);
             }
             "--store-clear" | "--enforce-https" => {
-                eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Eyeron", args[i]);
+                eprintln!("warning: {} is accepted for CLI compatibility but not implemented in Euleron", args[i]);
             }
             other if other.starts_with('-') && other != "-" => {
-                return Err(EyeronError::new(format!("unknown option {}", other)));
+                return Err(EuleronError::new(format!("unknown option {}", other)));
             }
             file => opt.files.push(file.to_string()),
         }
@@ -146,11 +146,11 @@ fn parse_usize_option(args: &[String], index: &mut usize) -> Result<usize> {
     let flag = args[*index].clone();
     *index += 1;
     let Some(value) = args.get(*index) else {
-        return Err(EyeronError::new(format!("{} requires a non-negative integer", flag)));
+        return Err(EuleronError::new(format!("{} requires a non-negative integer", flag)));
     };
     value
         .parse::<usize>()
-        .map_err(|_| EyeronError::new(format!("{} requires a non-negative integer, got {}", flag, value)))
+        .map_err(|_| EuleronError::new(format!("{} requires a non-negative integer, got {}", flag, value)))
 }
 
 fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat>> {
@@ -167,7 +167,7 @@ fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat
     match (format, extension.as_deref(), rdf_mode) {
         (Some(format), _, _) => Ok(Some(format)),
         (None, Some("n3"), _) => Ok(None),
-        (None, _, true) => Err(EyeronError::new(format!(
+        (None, _, true) => Err(EuleronError::new(format!(
             "cannot infer RDF format for {}; use .ttl, .nt, .nq, .trig, or .n3",
             label
         ))),
@@ -213,9 +213,9 @@ fn percent_encode_path(path: &str) -> String {
 }
 
 fn print_help() {
-    println!("eyeron {}", VERSION);
+    println!("euleron {}", VERSION);
     println!();
-    println!("Usage: eyeron [options] [file.n3|file.ttl|file.nt|file.nq|file.trig|- ...]");
+    println!("Usage: euleron [options] [file.n3|file.ttl|file.nt|file.nq|file.trig|- ...]");
     println!();
     println!("Options:");
     println!("  -a, --ast                     Print parsed AST/debug form and exit");

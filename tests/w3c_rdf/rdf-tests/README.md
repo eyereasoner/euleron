@@ -15,7 +15,7 @@ cargo test
 Run once online to populate or refresh this mirror:
 
 ```bash
-EYERON_W3C_RDF_REFRESH=1 cargo test --test w3c_rdf
+EULERON_W3C_RDF_REFRESH=1 cargo test --test w3c_rdf
 ```
 
 During refresh, the 12 per-manifest harness checks are reported as delegated and the aggregate pass performs the single online mirror refresh.

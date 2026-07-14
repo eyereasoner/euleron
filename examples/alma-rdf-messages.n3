@@ -5,7 +5,7 @@
 # checked into examples/input/.
 #
 # CLI:
-#   eyeron -r --stream-messages examples/alma-rdf-messages.n3 https://ugent-lib-opendata-prd.s3.ugent.be/alma-rdf/rdf-messages.20260404.nt
+#   euleron -r --stream-messages examples/alma-rdf-messages.n3 https://ugent-lib-opendata-prd.s3.ugent.be/alma-rdf/rdf-messages.20260404.nt
 #
 # Playground:
 #   https://eyereasoner.github.io/eyeling/playground?state=g.H4sIAAAAAAAC_02N3QqDMAxG36XXtpEpu_BtUhur0EZJWrYx9u7Tjf1chBz44Jy7ITMY05i0v7mUTQeAGomLTYu360YcsKDdJDjt3GtxngBTRithgv1sJlWMpO7Uns5t3_aOy66sf0rBi4tLmauvSjKuXA7RuGagGwmhrkxycFo4gtCkMBMGhYwLA10xb4n0m_0ludtL3gxFKjVGPpDf8HgCVZUvyeAAAAA

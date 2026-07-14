@@ -1,6 +1,6 @@
 #![allow(dead_code, unused_imports)]
-use eyeron::ast::{Literal, Term, Triple, LOG_NAME_OF, RDF_FIRST, RDF_NIL, RDF_REST, RDF_TYPE};
-use eyeron::{parse_rdf12, Document, RdfFormat};
+use euleron::ast::{Literal, Term, Triple, LOG_NAME_OF, RDF_FIRST, RDF_NIL, RDF_REST, RDF_TYPE};
+use euleron::{parse_rdf12, Document, RdfFormat};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::env;
 use std::fs;
@@ -160,7 +160,7 @@ pub fn run_default_suite() -> Result<(), String> {
     assert_clean_counts("w3c_rdf_13_all_manifests_1170_earl_report", &counts, expected)
 }
 
-pub fn refresh_requested() -> bool { env_flag("EYERON_W3C_RDF_REFRESH") }
+pub fn refresh_requested() -> bool { env_flag("EULERON_W3C_RDF_REFRESH") }
 
 pub fn run_manifest_suite_for_test(label: &str, resource: &str, expected_total: usize) -> Result<(), String> {
     let counts = run_options(options_from_env(vec![resource.to_string()], false))?;
@@ -169,9 +169,9 @@ pub fn run_manifest_suite_for_test(label: &str, resource: &str, expected_total: 
 }
 
 fn options_from_env(resources: Vec<String>, write_report: bool) -> Options {
-    let output = std::env::var("EYERON_W3C_RDF_EARL")
+    let output = std::env::var("EULERON_W3C_RDF_EARL")
         .unwrap_or_else(|_| "reports/w3c-rdf-earl.ttl".to_string());
-    let filter = std::env::var("EYERON_W3C_RDF_FILTER")
+    let filter = std::env::var("EULERON_W3C_RDF_FILTER")
         .ok()
         .filter(|value| !value.trim().is_empty());
     Options {
@@ -179,14 +179,14 @@ fn options_from_env(resources: Vec<String>, write_report: bool) -> Options {
         output: PathBuf::from(output),
         no_report: !write_report,
         filter,
-        quiet: env_flag("EYERON_W3C_RDF_QUIET"),
-        verbose: env_flag("EYERON_W3C_RDF_VERBOSE"),
+        quiet: env_flag("EULERON_W3C_RDF_QUIET"),
+        verbose: env_flag("EULERON_W3C_RDF_VERBOSE"),
         ..Options::default()
     }
 }
 
 fn has_filter() -> bool {
-    std::env::var("EYERON_W3C_RDF_FILTER").map(|value| !value.trim().is_empty()).unwrap_or(false)
+    std::env::var("EULERON_W3C_RDF_FILTER").map(|value| !value.trim().is_empty()).unwrap_or(false)
 }
 
 fn assert_clean_counts(label: &str, counts: &Counts, expected_total: Option<usize>) -> Result<(), String> {
@@ -271,13 +271,13 @@ fn parse_args(args: Vec<String>) -> Result<Options, String> {
 }
 
 fn print_help() {
-    println!("Rust-only W3C RDF 1.x manifest test runner for Eyeron");
+    println!("Rust-only W3C RDF 1.x manifest test runner for Euleron");
     println!();
     println!("Usage:");
     println!("  cargo test --test w3c_rdf");
     println!();
     println!("By default, runs the same 12 W3C RDF manifests from the local tests/w3c_rdf/rdf-tests mirror and writes reports/w3c-rdf-earl.ttl.");
-    println!("Network is disabled by default for speed; use EYERON_W3C_RDF_REFRESH=1 to bootstrap or refresh the local mirror.");
+    println!("Network is disabled by default for speed; use EULERON_W3C_RDF_REFRESH=1 to bootstrap or refresh the local mirror.");
     println!();
     println!("Options:");
     println!("  --output PATH   EARL report path (default: reports/w3c-rdf-earl.ttl)");
@@ -292,12 +292,12 @@ fn print_help() {
 
 impl Runner {
     fn from_env() -> Self {
-        let disk_cache_dir = env::var("EYERON_W3C_RDF_CACHE_DIR")
+        let disk_cache_dir = env::var("EULERON_W3C_RDF_CACHE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_W3C_RDF_CACHE_DIR));
-        let refresh_cache = env_flag("EYERON_W3C_RDF_REFRESH");
-        let online = refresh_cache || env_flag("EYERON_W3C_RDF_ONLINE");
-        let offline = env_flag("EYERON_W3C_RDF_OFFLINE") || !online;
+        let refresh_cache = env_flag("EULERON_W3C_RDF_REFRESH");
+        let online = refresh_cache || env_flag("EULERON_W3C_RDF_ONLINE");
+        let offline = env_flag("EULERON_W3C_RDF_OFFLINE") || !online;
         Runner { cache: HashMap::new(), parsed_docs: HashMap::new(), disk_cache_dir, offline, refresh_cache }
     }
 
@@ -363,7 +363,7 @@ impl Runner {
             return Err(format!(
                 "local W3C RDF mirror miss for {resource}; expected {expected}. \
                  The W3C RDF conformance test is intentionally local-only so `cargo test` stays fast. \
-                 Run once with EYERON_W3C_RDF_REFRESH=1 to populate the mirror, then commit tests/w3c_rdf/rdf-tests/."
+                 Run once with EULERON_W3C_RDF_REFRESH=1 to populate the mirror, then commit tests/w3c_rdf/rdf-tests/."
             ));
         }
         let text = match fetch_url(resource) {
@@ -1357,14 +1357,14 @@ fn compact_type(t: &str) -> String {
 }
 
 fn rdf_manifests_to_earl(runs: &[ManifestRun]) -> String {
-    let asserted_by = "<https://github.com/eyereasoner/eyeron>";
+    let asserted_by = "<https://github.com/eyereasoner/euleron>";
     let mut lines = vec![
         "@prefix earl: <http://www.w3.org/ns/earl#> .".to_string(),
         "@prefix doap: <http://usefulinc.com/ns/doap#> .".to_string(),
         "@prefix xsd: <http://www.w3.org/2001/XMLSchema#> .".to_string(),
         String::new(),
         format!("{asserted_by} a earl:Software, doap:Project ;"),
-        "  doap:name \"Eyeron\" .".to_string(),
+        "  doap:name \"Euleron\" .".to_string(),
         String::new(),
     ];
     for run in runs {

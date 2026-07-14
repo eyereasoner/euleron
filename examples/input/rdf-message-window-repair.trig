@@ -4,7 +4,7 @@
 #
 # This file is the data half of the runnable example:
 #
-#   eyeron -r examples/rdf-message-window-repair.n3 examples/input/rdf-message-window-repair.trig
+#   euleron -r examples/rdf-message-window-repair.n3 examples/input/rdf-message-window-repair.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../../README.md#rdf-messages
@@ -35,7 +35,7 @@ in:run a see:InputDataset ;
   see:title "RDF Message Window Repair" ;
   see:sourceFile "examples/rdf-message-window-repair.n3" ;
   see:description "A true RDF 1.2 Message Log for sliding-window repair of an open/closed fire-door inconsistency." ;
-  see:compiler "Eyeron RDF Message Log input" .
+  see:compiler "Euleron RDF Message Log input" .
 
 MESSAGE
 

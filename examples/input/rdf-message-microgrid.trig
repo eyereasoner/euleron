@@ -4,14 +4,14 @@
 #
 # This file is the data half of the runnable example:
 #
-#   eyeron -r examples/rdf-message-microgrid.n3 examples/input/rdf-message-microgrid.trig
+#   euleron -r examples/rdf-message-microgrid.n3 examples/input/rdf-message-microgrid.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../../README.md#rdf-messages
 #
 # The scene is a clinic operating as an islanded microgrid after a storm. The
 # data arrives as a true RDF Message Log: life-safety loads, power status,
-# flexible demand, and an empty heartbeat. Eyeron parses the MESSAGE boundaries
+# flexible demand, and an empty heartbeat. Euleron parses the MESSAGE boundaries
 # internally and exposes the replay to the N3 rules as eymsg: envelopes.
 
 VERSION "1.2-messages"
@@ -32,8 +32,8 @@ in:run a see:InputDataset ;
   see:name "rdf_message_microgrid" ;
   see:title "RDF Message Microgrid" ;
   see:sourceFile "examples/rdf-message-microgrid.n3" ;
-  see:description "A true RDF 1.2 Message Log for a storm clinic microgrid. Eyeron parses MESSAGE delimiters into replayable internal message envelopes for bounded, explainable load-shedding." ;
-  see:compiler "Eyeron RDF Message Log input" .
+  see:description "A true RDF 1.2 Message Log for a storm clinic microgrid. Euleron parses MESSAGE delimiters into replayable internal message envelopes for bounded, explainable load-shedding." ;
+  see:compiler "Euleron RDF Message Log input" .
 
 MESSAGE
 

@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
-    <title>The Eyeron N3 Playground</title>
+    <title>The Euleron N3 Playground</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css" />
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css" />
     <style>
@@ -142,9 +142,9 @@
   <body>
     <main class="page">
       <header>
-        <h1>The Eyeron N3 Playground</h1>
+        <h1>The Euleron N3 Playground</h1>
         <p>
-          Run <a href="https://github.com/eyereasoner/eyeron" target="_blank" rel="noopener noreferrer">eyeron</a>
+          Run <a href="https://github.com/eyereasoner/euleron" target="_blank" rel="noopener noreferrer">euleron</a>
           in your browser with the same N3-first reasoner core.
         </p>
         <p class="hint">Version <strong id="version">…</strong></p>
@@ -229,7 +229,7 @@
       const trigExample = `PREFIX : <http://example.org/#>\n\n:g { :s :p :o }\n`;
       const queryExample = `@prefix log: <http://www.w3.org/2000/10/swap/log#>.\nPREFIX : <http://example.org/#>\n\n{ ?S ?P ?O } log:query { ?S ?P ?O }.\n`;
       const GIST_SHARE_THRESHOLD = 2000;
-      const GITHUB_GIST_API_TOKEN_KEY = 'eyeron.playground.github.gistToken.v1';
+      const GITHUB_GIST_API_TOKEN_KEY = 'euleron.playground.github.gistToken.v1';
       const GITHUB_GIST_CREATE_API_URL = 'https://api.github.com/gists';
       let oversizedStateShareUrlForGist = '';
 
@@ -344,7 +344,7 @@
       let outputMarkdownMode = false;
       let outputMarkdownAutoDetect = false;
       let outputView = 'source';
-      let eyeronModule = null;
+      let euleronModule = null;
       let currentExample = '';
       let currentExampleText = '';
       runButton.disabled = true;
@@ -704,9 +704,9 @@
         data.setValue('');
         setExampleMarker(name, text);
         setStatus('Loaded examples/' + name, 'status ok');
-        localStorage.setItem('eyeron.playground.example', name);
-        localStorage.setItem('eyeron.playground.input', text);
-        localStorage.setItem('eyeron.playground.data', '');
+        localStorage.setItem('euleron.playground.example', name);
+        localStorage.setItem('euleron.playground.input', text);
+        localStorage.setItem('euleron.playground.data', '');
       }
 
       function bytesToBase64Url(bytes) {
@@ -935,9 +935,9 @@
             Authorization: 'Bearer ' + token,
           },
           body: JSON.stringify({
-            description: 'Eyeron playground shared state',
+            description: 'Euleron playground shared state',
             public: false,
-            files: { 'eyeron-playground-state.json': { content } },
+            files: { 'euleron-playground-state.json': { content } },
           }),
           cache: 'no-store',
           referrerPolicy: 'no-referrer',
@@ -1051,24 +1051,24 @@
           return;
         }
 
-        const savedInput = localStorage.getItem('eyeron.playground.input');
-        const savedData = localStorage.getItem('eyeron.playground.data');
+        const savedInput = localStorage.getItem('euleron.playground.input');
+        const savedData = localStorage.getItem('euleron.playground.data');
         input.setValue(savedInput || defaultProgram);
         data.setValue(savedData || '');
-        proofCheckbox.checked = localStorage.getItem('eyeron.playground.proof') === '1';
-        rdfCheckbox.checked = localStorage.getItem('eyeron.playground.rdf') === '1';
-        rdfFormatSelect.value = localStorage.getItem('eyeron.playground.rdfFormat') || 'auto';
-        const savedExample = localStorage.getItem('eyeron.playground.example') || '';
+        proofCheckbox.checked = localStorage.getItem('euleron.playground.proof') === '1';
+        rdfCheckbox.checked = localStorage.getItem('euleron.playground.rdf') === '1';
+        rdfFormatSelect.value = localStorage.getItem('euleron.playground.rdfFormat') || 'auto';
+        const savedExample = localStorage.getItem('euleron.playground.example') || '';
         if (savedExample && savedInput) {
           setExampleMarker(savedExample, savedInput);
         }
       }
 
-      async function loadEyeron() {
+      async function loadEuleron() {
         try {
-          const mod = await import('./pkg/eyeron.js');
+          const mod = await import('./pkg/euleron.js');
           await mod.default();
-          eyeronModule = mod;
+          euleronModule = mod;
           version.textContent = mod.version ? `v${mod.version()}` : 'loaded';
           setStatus('Ready', 'status ok');
           runButton.disabled = false;
@@ -1080,21 +1080,21 @@
       }
 
       async function run() {
-        if (!eyeronModule) return;
-        localStorage.setItem('eyeron.playground.input', input.getValue());
-        localStorage.setItem('eyeron.playground.data', data.getValue());
-        localStorage.setItem('eyeron.playground.proof', proofCheckbox.checked ? '1' : '0');
-        localStorage.setItem('eyeron.playground.rdf', rdfCheckbox.checked ? '1' : '0');
-        localStorage.setItem('eyeron.playground.rdfFormat', rdfFormatSelect.value);
-        localStorage.setItem('eyeron.playground.example', currentExample || '');
+        if (!euleronModule) return;
+        localStorage.setItem('euleron.playground.input', input.getValue());
+        localStorage.setItem('euleron.playground.data', data.getValue());
+        localStorage.setItem('euleron.playground.proof', proofCheckbox.checked ? '1' : '0');
+        localStorage.setItem('euleron.playground.rdf', rdfCheckbox.checked ? '1' : '0');
+        localStorage.setItem('euleron.playground.rdfFormat', rdfFormatSelect.value);
+        localStorage.setItem('euleron.playground.example', currentExample || '');
 
         runButton.disabled = true;
         setStatus('Running…');
         try {
           await new Promise(requestAnimationFrame);
           clearErrorHighlight();
-          const rawReport = eyeronModule.reasonWithDataReport
-            ? eyeronModule.reasonWithDataReport(
+          const rawReport = euleronModule.reasonWithDataReport
+            ? euleronModule.reasonWithDataReport(
                 input.getValue(),
                 data.getValue(),
                 proofCheckbox.checked,
@@ -1103,7 +1103,7 @@
               )
             : JSON.stringify({
                 ok: true,
-                output: eyeronModule.reasonWithData(
+                output: euleronModule.reasonWithData(
                   input.getValue(),
                   data.getValue(),
                   proofCheckbox.checked,
@@ -1183,7 +1183,7 @@
       });
 
       await restoreInitialState();
-      loadEyeron();
+      loadEuleron();
     </script>
   </body>
 </html>

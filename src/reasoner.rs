@@ -760,7 +760,7 @@ fn derived_fact_record(fact: Triple, rule: &Rule, bindings: &Bindings) -> Derive
 }
 
 fn is_unquote_instruction(t: &Triple) -> bool {
-    matches!((&t.s, &t.p), (Term::Iri(s), Term::Iri(p)) if s == EYERON_UNQUOTE && p == EYERON_UNQUOTE)
+    matches!((&t.s, &t.p), (Term::Iri(s), Term::Iri(p)) if s == EULERON_UNQUOTE && p == EULERON_UNQUOTE)
 }
 
 fn insert_materialized_triple(
@@ -1831,7 +1831,7 @@ fn eval_collect_all_in(
     let Term::Formula(clause_triples) = parts[1].clone() else { return Vec::new(); };
     let result_template = parts[2].clone();
 
-    // Eyeron treats a blank-node result slot as an existence check only.
+    // Euleron treats a blank-node result slot as an existence check only.
     if matches!(result_template, Term::Blank(_)) {
         return vec![bindings.clone()];
     }

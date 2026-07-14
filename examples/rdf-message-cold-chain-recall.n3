@@ -4,7 +4,7 @@
 #
 # Run as:
 #
-#   eyeron -r examples/rdf-message-cold-chain-recall.n3 examples/input/rdf-message-cold-chain-recall.trig
+#   euleron -r examples/rdf-message-cold-chain-recall.n3 examples/input/rdf-message-cold-chain-recall.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../README.md#rdf-messages

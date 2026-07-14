@@ -4,7 +4,7 @@
 #
 # Run as:
 #
-#   eyeron -r examples/rdf-message-ldes-incremental.n3 examples/input/rdf-message-ldes-incremental.trig
+#   euleron -r examples/rdf-message-ldes-incremental.n3 examples/input/rdf-message-ldes-incremental.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../README.md#rdf-messages
@@ -12,7 +12,7 @@
 # This example combines two streaming ideas:
 #
 # - RDF Messages give parser-level message boundaries for a potentially long
-#   stream.  Eyeron replays those boundaries as eymsg: envelopes and keeps each
+#   stream.  Euleron replays those boundaries as eymsg: envelopes and keeps each
 #   payload graph separate.
 # - LDES describes an append-only stream of members with a timestamp/sequence
 #   order.  The rules below model an incremental consumer that has already
@@ -33,7 +33,7 @@
 @prefix math: <http://www.w3.org/2000/10/swap/math#>.
 @prefix string: <http://www.w3.org/2000/10/swap/string#>.
 
-# Eyeron's RDF-message replay gives us a static, ordered view of a message log.
+# Euleron's RDF-message replay gives us a static, ordered view of a message log.
 {
   ?Stream a eymsg:RDFMessageStream;
     eymsg:envelope ?Envelope.
@@ -224,7 +224,7 @@
     :resolvedDoorState ?State;
     :materializedActionText ?ActionText.
   ?State :stateText ?StateText.
-  ("# rdf-message-ldes-incremental\n\n## Source files\n\n- [N3 rules](../rdf-message-ldes-incremental.n3)\n- [Input RDF Message Log](../input/rdf-message-ldes-incremental.trig)\n- [Story deck](../deck/rdf-message-ldes-incremental.md)\n\n## Answer\nIncremental LDES reasoning accepted: %d RDF Message envelopes contained %d append-only LDES members. The consumer checkpoint was sequence %d, so %d committed history members were skipped and only %d newly emitted members entered the repair window. The tail window has %d members, contains a raw open/closed inconsistency for doorA, repairs it by keeping the priority-%d member at sequence %d from %s, resolves the door state to %s, and materializes the action: %s.\n\n## Explanation\nThe input is deliberately larger than the reasoning task: it serializes many LDES members as RDF Messages, but the LDES sequence bookmark tells the consumer which prefix was already materialized. Eyeron's -r mode replays the RDF Message Log into ordered eymsg: envelopes; the rules inspect each payload with log:includes, classify old versus new members from the LDES sequence path, and run the inconsistency repair only over the new tail. This mirrors an incremental streaming pipeline: append-only publication, resumable synchronization, small repair window, and monotonic output after the noisy tail is fixed." ?EnvelopeCount ?AllCount ?Bookmark ?CommittedCount ?NewCount ?WindowCount ?PreferredPriority ?PreferredSequence ?PreferredSource ?StateText ?ActionText) string:format ?Block.
+  ("# rdf-message-ldes-incremental\n\n## Source files\n\n- [N3 rules](../rdf-message-ldes-incremental.n3)\n- [Input RDF Message Log](../input/rdf-message-ldes-incremental.trig)\n- [Story deck](../deck/rdf-message-ldes-incremental.md)\n\n## Answer\nIncremental LDES reasoning accepted: %d RDF Message envelopes contained %d append-only LDES members. The consumer checkpoint was sequence %d, so %d committed history members were skipped and only %d newly emitted members entered the repair window. The tail window has %d members, contains a raw open/closed inconsistency for doorA, repairs it by keeping the priority-%d member at sequence %d from %s, resolves the door state to %s, and materializes the action: %s.\n\n## Explanation\nThe input is deliberately larger than the reasoning task: it serializes many LDES members as RDF Messages, but the LDES sequence bookmark tells the consumer which prefix was already materialized. Euleron's -r mode replays the RDF Message Log into ordered eymsg: envelopes; the rules inspect each payload with log:includes, classify old versus new members from the LDES sequence path, and run the inconsistency repair only over the new tail. This mirrors an incremental streaming pipeline: append-only publication, resumable synchronization, small repair window, and monotonic output after the noisy tail is fixed." ?EnvelopeCount ?AllCount ?Bookmark ?CommittedCount ?NewCount ?WindowCount ?PreferredPriority ?PreferredSequence ?PreferredSource ?StateText ?ActionText) string:format ?Block.
 } => {
   :rdfMessageLDESIncrementalExample log:outputString ?Block.
   :rdfMessageLDESIncrementalExample :demonstrates :RDFMessageLogReplay, :LDESMemberStream, :CheckpointedSynchronization, :IncrementalReasoning, :TailWindowRepair, :RawDoorInconsistency, :PreferredRepair.

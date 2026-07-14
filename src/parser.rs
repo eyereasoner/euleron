@@ -1,5 +1,5 @@
 use crate::ast::*;
-use crate::error::{EyeronError, Result};
+use crate::error::{EuleronError, Result};
 use crate::lexer::{lex, Token, TokenKind};
 use crate::rdf_compat::RdfFormat;
 
@@ -27,7 +27,7 @@ fn line_starts(input: &str) -> Vec<usize> {
 }
 
 /// Parse an RDF Message Log using the draft `VERSION "1.2-messages"` /
-/// `MESSAGE` delimiter syntax and materialize Eyeron's internal replay view.
+/// `MESSAGE` delimiter syntax and materialize Euleron's internal replay view.
 ///
 /// The replay view uses the `eymsg:` vocabulary: one stream resource, ordered
 /// message envelopes, next-envelope links, payload kind, and one payload graph
@@ -41,15 +41,15 @@ pub fn parse_rdf_message_log(input: &str, base_iri: Option<&str>) -> Result<Docu
 
     // Seed prefixes even if all messages are empty.
     if !prefixes.trim().is_empty() {
-        let seed_text = format!("{}\n<urn:eyeron:prefix-seed> <urn:eyeron:prefix-seed> <urn:eyeron:prefix-seed> .\n", prefixes);
+        let seed_text = format!("{}\n<urn:euleron:prefix-seed> <urn:euleron:prefix-seed> <urn:euleron:prefix-seed> .\n", prefixes);
         let mut seed = parse_n3(&seed_text, base_iri)?;
         seed.facts.clear();
         doc.merge(seed);
     }
 
-    let stream = Term::iri("urn:eyeron:rdf-message-stream:1");
+    let stream = Term::iri("urn:euleron:rdf-message-stream:1");
     let envelope_terms: Vec<Term> = (0..messages.len())
-        .map(|i| Term::iri(format!("urn:eyeron:rdf-message-stream:1:envelope:{}", i + 1)))
+        .map(|i| Term::iri(format!("urn:euleron:rdf-message-stream:1:envelope:{}", i + 1)))
         .collect();
 
     let ey = |local: &str| Term::iri(format!("https://eyereasoner.github.io/eyeling/vocab/message#{}", local));
@@ -82,7 +82,7 @@ pub fn parse_rdf_message_log(input: &str, base_iri: Option<&str>) -> Result<Docu
             doc.prefixes.insert(k.clone(), v.clone());
         }
 
-        let payload = Term::iri(format!("urn:eyeron:rdf-message-stream:1:payload:{}", idx + 1));
+        let payload = Term::iri(format!("urn:euleron:rdf-message-stream:1:payload:{}", idx + 1));
         doc.facts.push(Triple::new(envelope.clone(), ey("payloadKind"), ey("nonEmpty")));
         doc.facts.push(Triple::new(envelope, ey("payloadGraph"), payload.clone()));
         doc.facts.push(Triple::new(payload, log("nameOf"), Term::Formula(msg_doc.facts)));
@@ -137,7 +137,7 @@ fn normalize_turtle_directive(line: &str, upper: &str, n3: &str) -> Result<Strin
     let rest = if line.len() >= upper.len() && line[..upper.len()].eq_ignore_ascii_case(upper) {
         line[upper.len()..].trim()
     } else {
-        return Err(EyeronError::new(format!("expected {} directive", upper)));
+        return Err(EuleronError::new(format!("expected {} directive", upper)));
     };
     let without_dot = rest.strip_suffix('.').unwrap_or(rest).trim();
     Ok(format!("{} {} .", n3, without_dot))
@@ -350,11 +350,11 @@ impl Parser {
             TokenKind::AtPrefix | TokenKind::Prefix => return self.parse_prefix(),
             TokenKind::AtBase | TokenKind::Base => return self.parse_base(),
             TokenKind::AtVersion | TokenKind::Version => return self.parse_version(),
-            TokenKind::Dot => { return Err(EyeronError::at("empty RDF statement", self.peek().offset)); }
+            TokenKind::Dot => { return Err(EuleronError::at("empty RDF statement", self.peek().offset)); }
             TokenKind::LBrace if matches!(self.profile.rdf_format(), Some(RdfFormat::Trig)) => {
                 let triples = self.parse_graph_block()?;
                 self.add_facts(triples, source.clone());
-                if self.check(&TokenKind::Dot) { return Err(EyeronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
+                if self.check(&TokenKind::Dot) { return Err(EuleronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
                 return Ok(());
             }
             _ => {}
@@ -364,26 +364,26 @@ impl Parser {
             self.advance();
             let (graph, generated) = self.parse_term()?;
             self.ensure_rdf_graph_label(&graph)?;
-            if !generated.is_empty() { return Err(EyeronError::new("graph label cannot generate triples")); }
+            if !generated.is_empty() { return Err(EuleronError::new("graph label cannot generate triples")); }
             let triples = self.parse_graph_block()?;
             self.add_fact(named_graph_formula(graph, triples), source.clone());
-            if self.check(&TokenKind::Dot) { return Err(EyeronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
+            if self.check(&TokenKind::Dot) { return Err(EuleronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
             return Ok(());
         }
 
         if self.check(&TokenKind::A) {
-            return Err(EyeronError::at("'a' is only valid as an RDF predicate", self.peek().offset));
+            return Err(EuleronError::at("'a' is only valid as an RDF predicate", self.peek().offset));
         }
         let (subject, generated) = self.parse_term()?;
         if self.check(&TokenKind::LBrace) {
             if !matches!(self.profile.rdf_format(), Some(RdfFormat::Trig)) {
-                return Err(EyeronError::at("named graph blocks are only valid in TriG mode", self.peek().offset));
+                return Err(EuleronError::at("named graph blocks are only valid in TriG mode", self.peek().offset));
             }
             self.ensure_rdf_graph_label(&subject)?;
-            if !generated.is_empty() { return Err(EyeronError::new("graph label cannot generate triples")); }
+            if !generated.is_empty() { return Err(EuleronError::new("graph label cannot generate triples")); }
             let triples = self.parse_graph_block()?;
             self.add_fact(named_graph_formula(subject, triples), source.clone());
-            if self.check(&TokenKind::Dot) { return Err(EyeronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
+            if self.check(&TokenKind::Dot) { return Err(EuleronError::at("TriG graph blocks are not followed by '.'", self.peek().offset)); }
             return Ok(());
         }
 
@@ -397,28 +397,28 @@ impl Parser {
     fn parse_rdf_line_document(&mut self) -> Result<()> {
         while !self.check(&TokenKind::Eof) {
             match self.peek_kind() {
-                TokenKind::Dot => { return Err(EyeronError::at("empty N-Triples/N-Quads statement", self.peek().offset)); }
+                TokenKind::Dot => { return Err(EuleronError::at("empty N-Triples/N-Quads statement", self.peek().offset)); }
                 TokenKind::AtPrefix | TokenKind::Prefix | TokenKind::AtBase | TokenKind::Base | TokenKind::AtVersion | TokenKind::Version => {
-                    return Err(EyeronError::at("directives are not allowed in N-Triples/N-Quads", self.peek().offset));
+                    return Err(EuleronError::at("directives are not allowed in N-Triples/N-Quads", self.peek().offset));
                 }
                 _ => {}
             }
 
             let source = self.source_ref_at(self.peek().offset);
-            if self.check(&TokenKind::A) { return Err(EyeronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
+            if self.check(&TokenKind::A) { return Err(EuleronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
             let (subject, mut generated) = self.parse_term()?;
             self.ensure_rdf_line_subject(&subject)?;
-            if !generated.is_empty() { return Err(EyeronError::new("N-Triples/N-Quads subject cannot generate triples")); }
+            if !generated.is_empty() { return Err(EuleronError::new("N-Triples/N-Quads subject cannot generate triples")); }
 
-            if self.check(&TokenKind::A) { return Err(EyeronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
+            if self.check(&TokenKind::A) { return Err(EuleronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
             let (predicate, mut pred_generated) = self.parse_term()?;
             self.ensure_rdf_predicate(&predicate)?;
-            if !pred_generated.is_empty() { return Err(EyeronError::new("N-Triples/N-Quads predicate cannot generate triples")); }
+            if !pred_generated.is_empty() { return Err(EuleronError::new("N-Triples/N-Quads predicate cannot generate triples")); }
 
-            if self.check(&TokenKind::A) { return Err(EyeronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
+            if self.check(&TokenKind::A) { return Err(EuleronError::at("'a' is not N-Triples/N-Quads syntax", self.peek().offset)); }
             let (object, mut obj_generated) = self.parse_term()?;
             self.ensure_rdf_line_object(&object)?;
-            if !obj_generated.is_empty() { return Err(EyeronError::new("N-Triples/N-Quads object cannot generate triples")); }
+            if !obj_generated.is_empty() { return Err(EuleronError::new("N-Triples/N-Quads object cannot generate triples")); }
 
             let asserted = Triple::new(subject, predicate, object);
             generated.append(&mut pred_generated);
@@ -428,10 +428,10 @@ impl Parser {
             if matches!(self.profile.rdf_format(), Some(RdfFormat::NQuads)) && !self.check(&TokenKind::Dot) {
                 let (graph, graph_generated) = self.parse_term()?;
                 self.ensure_rdf_graph_label(&graph)?;
-                if !graph_generated.is_empty() { return Err(EyeronError::new("graph label cannot generate triples")); }
+                if !graph_generated.is_empty() { return Err(EuleronError::new("graph label cannot generate triples")); }
                 self.add_fact(named_graph_formula(graph, generated), source.clone());
             } else if matches!(self.profile.rdf_format(), Some(RdfFormat::NTriples)) && !self.check(&TokenKind::Dot) {
-                return Err(EyeronError::at("N-Triples has too many terms before '.'", self.peek().offset));
+                return Err(EuleronError::at("N-Triples has too many terms before '.'", self.peek().offset));
             } else {
                 self.add_facts(generated, source.clone());
             }
@@ -452,22 +452,22 @@ impl Parser {
                 TokenKind::Dot if triples.is_empty() => {
                     self.advance();
                     if self.check(&TokenKind::Dot) || self.check(&TokenKind::RBrace) || self.check(&TokenKind::Eof) {
-                        return Err(EyeronError::at("extra '.' in TriG graph block", self.peek().offset));
+                        return Err(EuleronError::at("extra '.' in TriG graph block", self.peek().offset));
                     }
                     continue;
                 }
                 TokenKind::Dot => {
-                    return Err(EyeronError::at("extra '.' in TriG graph block", self.peek().offset));
+                    return Err(EuleronError::at("extra '.' in TriG graph block", self.peek().offset));
                 }
                 TokenKind::AtPrefix | TokenKind::Prefix | TokenKind::AtBase | TokenKind::Base | TokenKind::AtVersion | TokenKind::Version => {
-                    return Err(EyeronError::at("directives are not allowed inside TriG graph blocks", self.peek().offset));
+                    return Err(EuleronError::at("directives are not allowed inside TriG graph blocks", self.peek().offset));
                 }
                 _ => {
                     let mut parsed = self.parse_triples_sequence()?;
                     triples.append(&mut parsed);
                     if self.check(&TokenKind::Dot) { self.advance(); }
                     else if !self.check(&TokenKind::RBrace) {
-                        return Err(EyeronError::at("expected '.' or '}' in graph block", self.peek().offset));
+                        return Err(EuleronError::at("expected '.' or '}' in graph block", self.peek().offset));
                     }
                 }
             }
@@ -483,22 +483,22 @@ impl Parser {
         let name = match t.kind {
             TokenKind::PName(p) => {
                 if self.profile.is_rdf12() && !p.ends_with(':') {
-                    return Err(EyeronError::at("RDF prefix name must end with ':'", t.offset));
+                    return Err(EuleronError::at("RDF prefix name must end with ':'", t.offset));
                 }
                 p.strip_suffix(':').unwrap_or(&p).to_string()
             }
-            _ => return Err(EyeronError::at("expected prefix name", t.offset)),
+            _ => return Err(EuleronError::at("expected prefix name", t.offset)),
         };
         let iri_tok = self.advance().clone();
         let iri = match iri_tok.kind {
             TokenKind::Iri(i) => self.resolve_iri(&i),
-            _ => return Err(EyeronError::at("expected prefix IRI", iri_tok.offset)),
+            _ => return Err(EuleronError::at("expected prefix IRI", iri_tok.offset)),
         };
         validate_prefix_label(&name, t.offset)?;
         self.doc.prefixes.insert(name, iri);
         if self.profile.is_rdf12() {
             if at_style { self.expect_dot()?; }
-            else if self.check(&TokenKind::Dot) { return Err(EyeronError::at("SPARQL-style PREFIX must not end with '.'", self.peek().offset)); }
+            else if self.check(&TokenKind::Dot) { return Err(EuleronError::at("SPARQL-style PREFIX must not end with '.'", self.peek().offset)); }
         } else if self.check(&TokenKind::Dot) { self.advance(); }
         Ok(())
     }
@@ -509,12 +509,12 @@ impl Parser {
         let iri_tok = self.advance().clone();
         let iri = match iri_tok.kind {
             TokenKind::Iri(i) => self.resolve_iri(&i),
-            _ => return Err(EyeronError::at("expected base IRI", iri_tok.offset)),
+            _ => return Err(EuleronError::at("expected base IRI", iri_tok.offset)),
         };
         self.doc.base_iri = Some(iri);
         if self.profile.is_rdf12() {
             if at_style { self.expect_dot()?; }
-            else if self.check(&TokenKind::Dot) { return Err(EyeronError::at("SPARQL-style BASE must not end with '.'", self.peek().offset)); }
+            else if self.check(&TokenKind::Dot) { return Err(EuleronError::at("SPARQL-style BASE must not end with '.'", self.peek().offset)); }
         } else if self.check(&TokenKind::Dot) { self.advance(); }
         Ok(())
     }
@@ -525,14 +525,14 @@ impl Parser {
         if self.profile.is_rdf12() {
             match version_tok.kind {
                 TokenKind::String(_) | TokenKind::StringSingle(_) => {}
-                _ => return Err(EyeronError::at("RDF VERSION requires a short string", version_tok.offset)),
+                _ => return Err(EuleronError::at("RDF VERSION requires a short string", version_tok.offset)),
             }
             if self.check(&TokenKind::Dot) { self.advance(); }
             return Ok(());
         }
         match version_tok.kind {
             TokenKind::String(_) | TokenKind::StringSingle(_) | TokenKind::StringLong(_) | TokenKind::StringLongSingle(_) | TokenKind::StringLongExtraQuote(_) | TokenKind::StringLongSingleExtraQuote(_) | TokenKind::PName(_) | TokenKind::Number(_) => {}
-            _ => return Err(EyeronError::at("expected version value", version_tok.offset)),
+            _ => return Err(EuleronError::at("expected version value", version_tok.offset)),
         }
         if self.check(&TokenKind::Dot) { self.advance(); }
         Ok(())
@@ -626,7 +626,7 @@ impl Parser {
             return Ok(Vec::new());
         }
         if matches!(self.peek_kind(), TokenKind::Boolean(false)) {
-            return Err(EyeronError::at("false rule conclusions are not supported", self.peek().offset));
+            return Err(EuleronError::at("false rule conclusions are not supported", self.peek().offset));
         }
         self.parse_formula()
     }
@@ -637,7 +637,7 @@ impl Parser {
             return Ok(Vec::new());
         }
         if matches!(self.peek_kind(), TokenKind::Boolean(false)) {
-            return Err(EyeronError::at("false rule conclusions are not supported", self.peek().offset));
+            return Err(EuleronError::at("false rule conclusions are not supported", self.peek().offset));
         }
         if matches!(self.peek_kind(), TokenKind::LBrace) {
             return self.parse_formula();
@@ -649,9 +649,9 @@ impl Parser {
         // the rule fires.
         let (term, generated) = self.parse_term()?;
         if !generated.is_empty() {
-            return Err(EyeronError::new("generated triples cannot appear around an unquoted RHS term"));
+            return Err(EuleronError::new("generated triples cannot appear around an unquoted RHS term"));
         }
-        Ok(vec![Triple::new(Term::iri(EYERON_UNQUOTE), Term::iri(EYERON_UNQUOTE), term)])
+        Ok(vec![Triple::new(Term::iri(EULERON_UNQUOTE), Term::iri(EULERON_UNQUOTE), term)])
     }
 
     fn parse_formula(&mut self) -> Result<Vec<Triple>> {
@@ -674,7 +674,7 @@ impl Parser {
             triples.extend(self.parse_triples_sequence()?);
             if self.check(&TokenKind::Dot) { self.advance(); }
             else if !self.check(&TokenKind::RBrace) {
-                return Err(EyeronError::at("expected '.' or '}' in formula", self.peek().offset));
+                return Err(EuleronError::at("expected '.' or '}' in formula", self.peek().offset));
             }
         }
         self.expect(TokenKind::RBrace)?;
@@ -697,15 +697,15 @@ impl Parser {
         // Store it as a first-class triple whose subject/object are formula terms;
         // the reasoner promotes derived implication triples to active rules.
         if self.check(&TokenKind::Arrow) || self.check(&TokenKind::BackArrow) {
-            if self.profile.is_rdf12() { return Err(EyeronError::at("N3 implication is not RDF syntax", self.peek().offset)); }
+            if self.profile.is_rdf12() { return Err(EuleronError::at("N3 implication is not RDF syntax", self.peek().offset)); }
             let backward = self.check(&TokenKind::BackArrow);
             self.advance();
             let (object, mut object_generated) = self.parse_term()?;
             if is_boolean_false_term(&object) {
-                return Err(EyeronError::at("false rule conclusions are not supported", self.peek().offset));
+                return Err(EuleronError::at("false rule conclusions are not supported", self.peek().offset));
             }
             if matches!((&subject, &object), (Term::Formula(_), Term::Var(_))) {
-                return Err(EyeronError::at("formula-to-variable implication is not supported", self.peek().offset));
+                return Err(EuleronError::at("formula-to-variable implication is not supported", self.peek().offset));
             }
             let object = if is_boolean_true_term(&object) { Term::Formula(Vec::new()) } else { object };
             triples.append(&mut object_generated);
@@ -721,7 +721,7 @@ impl Parser {
 
         let predicate_object_triples = self.parse_predicate_object_list(subject.clone())?;
         if self.profile.is_rdf12() && predicate_object_triples.is_empty() && !generated_standalone_ok {
-            return Err(EyeronError::at("expected RDF predicate-object list", self.peek().offset));
+            return Err(EuleronError::at("expected RDF predicate-object list", self.peek().offset));
         }
         triples.extend(predicate_object_triples);
         Ok(triples)
@@ -729,7 +729,7 @@ impl Parser {
 
     fn parse_triples_sequence(&mut self) -> Result<Vec<Triple>> {
         if self.profile.is_rdf12() && self.check(&TokenKind::A) {
-            return Err(EyeronError::at("'a' is only valid as an RDF predicate", self.peek().offset));
+            return Err(EuleronError::at("'a' is only valid as an RDF predicate", self.peek().offset));
         }
         let (subject, generated) = self.parse_term()?;
         if self.profile.is_rdf12() { self.ensure_rdf_subject(&subject)?; }
@@ -760,7 +760,7 @@ impl Parser {
                 self.advance();
                 let predicate = self.parse_verb()?;
                 if !self.peek_is_bare("of") {
-                    return Err(EyeronError::at("expected 'of' after 'is <predicate>'", self.peek().offset));
+                    return Err(EuleronError::at("expected 'of' after 'is <predicate>'", self.peek().offset));
                 }
                 self.advance();
                 loop {
@@ -779,7 +779,7 @@ impl Parser {
                 let predicate = self.parse_verb()?;
                 loop {
                     if self.profile.is_rdf12() && self.check(&TokenKind::A) {
-                        return Err(EyeronError::at("'a' is only valid as an RDF predicate", self.peek().offset));
+                        return Err(EuleronError::at("'a' is only valid as an RDF predicate", self.peek().offset));
                     }
                     let (object, mut generated) = self.parse_term()?;
                     let asserted = Triple::new(subject.clone(), predicate.clone(), object);
@@ -837,7 +837,7 @@ impl Parser {
     fn parse_annotation_block(&mut self, reifier: Term, triples: &mut Vec<Triple>) -> Result<()> {
         self.expect(TokenKind::LAnnotation)?;
         if self.check(&TokenKind::RAnnotation) {
-            return Err(EyeronError::at("empty RDF 1.2 annotation block", self.peek().offset));
+            return Err(EuleronError::at("empty RDF 1.2 annotation block", self.peek().offset));
         }
         triples.extend(self.parse_predicate_object_list(reifier)?);
         self.expect(TokenKind::RAnnotation)?;
@@ -852,27 +852,27 @@ impl Parser {
         let tok = self.advance().clone();
         let (suffix, offset) = match tok.kind {
             TokenKind::PName(p) if p.starts_with('~') => (p[1..].to_string(), tok.offset),
-            _ => return Err(EyeronError::at("expected RDF 1.2 reifier token", tok.offset)),
+            _ => return Err(EuleronError::at("expected RDF 1.2 reifier token", tok.offset)),
         };
         if suffix.is_empty() {
             match self.peek_kind() {
                 TokenKind::Iri(_) | TokenKind::PName(_) | TokenKind::Blank(_) | TokenKind::A => {
                     let (term, generated) = self.parse_term()?;
-                    if !generated.is_empty() { return Err(EyeronError::new("reifier term cannot generate triples")); }
+                    if !generated.is_empty() { return Err(EuleronError::new("reifier term cannot generate triples")); }
                     match term {
                         Term::Iri(_) | Term::Blank(_) => Ok(term),
-                        _ => Err(EyeronError::at("reifier must be an IRI or blank node", self.peek().offset)),
+                        _ => Err(EuleronError::at("reifier must be an IRI or blank node", self.peek().offset)),
                     }
                 }
                 _ => Ok(self.fresh_blank("reif")),
             }
         } else if let Some(label) = suffix.strip_prefix("_:") {
-            if label.is_empty() { return Err(EyeronError::at("empty blank-node reifier label", offset)); }
+            if label.is_empty() { return Err(EuleronError::at("empty blank-node reifier label", offset)); }
             Ok(Term::blank(label.to_string()))
         } else if suffix.contains(':') {
             Ok(Term::iri(self.expand_pname(&suffix, offset)?))
         } else {
-            Err(EyeronError::at("reifier suffix must be an IRI, prefixed name, or blank node", offset))
+            Err(EuleronError::at("reifier suffix must be an IRI, prefixed name, or blank node", offset))
         }
     }
 
@@ -883,7 +883,7 @@ impl Parser {
         }
         if self.profile.is_rdf12() {
             let (term, generated) = self.parse_term()?;
-            if !generated.is_empty() { return Err(EyeronError::new("RDF predicate cannot generate triples")); }
+            if !generated.is_empty() { return Err(EuleronError::new("RDF predicate cannot generate triples")); }
             self.ensure_rdf_predicate(&term)?;
             return Ok(term);
         }
@@ -915,7 +915,7 @@ impl Parser {
             }
             TokenKind::PName(p) => self.parse_pname_or_path(&p, tok.offset),
             TokenKind::Var(v) => {
-                if self.profile.is_rdf12() { Err(EyeronError::at("variables are not allowed in RDF syntax", tok.offset)) }
+                if self.profile.is_rdf12() { Err(EuleronError::at("variables are not allowed in RDF syntax", tok.offset)) }
                 else { Ok((Term::var(v), Vec::new())) }
             }
             TokenKind::Blank(b) => {
@@ -925,28 +925,28 @@ impl Parser {
             TokenKind::String(value) => self.finish_literal(value),
             TokenKind::StringSingle(value) | TokenKind::StringLong(value) | TokenKind::StringLongSingle(value) => {
                 if self.profile.is_line_syntax() {
-                    Err(EyeronError::at("N-Triples/N-Quads only allow short double-quoted string literals", tok.offset))
+                    Err(EuleronError::at("N-Triples/N-Quads only allow short double-quoted string literals", tok.offset))
                 } else {
                     self.finish_literal(value)
                 }
             }
             TokenKind::StringLongExtraQuote(value) | TokenKind::StringLongSingleExtraQuote(value) => {
                 if self.profile.is_rdf12() {
-                    Err(EyeronError::at("extra quote before long string terminator is not RDF syntax", tok.offset))
+                    Err(EuleronError::at("extra quote before long string terminator is not RDF syntax", tok.offset))
                 } else {
                     self.finish_literal(value)
                 }
             }
             TokenKind::Number(value) => {
                 if self.profile.is_line_syntax() {
-                    Err(EyeronError::at("N-Triples/N-Quads do not allow bare numeric literals", tok.offset))
+                    Err(EuleronError::at("N-Triples/N-Quads do not allow bare numeric literals", tok.offset))
                 } else if self.profile.is_rdf12() { rdf_number_literal(value, tok.offset).map(|t| (t, Vec::new())) }
                 else { Ok((number_literal(value), Vec::new())) }
             }
             TokenKind::Boolean(value) => Ok((boolean_literal(value), Vec::new())),
             TokenKind::A => Ok((Term::iri(RDF_TYPE), Vec::new())),
             TokenKind::LBrace => {
-                if self.profile.is_rdf12() { return Err(EyeronError::at("formula terms are not allowed in RDF syntax", tok.offset)); }
+                if self.profile.is_rdf12() { return Err(EuleronError::at("formula terms are not allowed in RDF syntax", tok.offset)); }
                 self.pos -= 1;
                 let triples = self.parse_formula()?;
                 Ok((Term::formula(triples), Vec::new()))
@@ -954,7 +954,7 @@ impl Parser {
             TokenKind::LBracket => self.parse_blank_node_property_list(),
             TokenKind::LParen => self.parse_list(),
             TokenKind::LTriple => self.parse_triple_term(),
-            other => Err(EyeronError::at(format!("expected term, got {:?}", other), tok.offset)),
+            other => Err(EuleronError::at(format!("expected term, got {:?}", other), tok.offset)),
         }
     }
 
@@ -963,20 +963,20 @@ impl Parser {
         if parenthesized { self.advance(); }
 
         if self.profile.is_line_syntax() && !parenthesized {
-            return Err(EyeronError::at("N-Triples/N-Quads use parenthesized triple terms", self.peek().offset));
+            return Err(EuleronError::at("N-Triples/N-Quads use parenthesized triple terms", self.peek().offset));
         }
 
         let (subject, mut generated) = self.parse_term()?;
         if self.profile.is_rdf12() {
             self.ensure_rdf_triple_subject(&subject)?;
-            if !generated.is_empty() && !generated_are_rdf12_reifications(&generated) { return Err(EyeronError::new("compound subject is not allowed inside an RDF triple term")); }
+            if !generated.is_empty() && !generated_are_rdf12_reifications(&generated) { return Err(EuleronError::new("compound subject is not allowed inside an RDF triple term")); }
         }
         let predicate = self.parse_verb()?;
         if self.profile.is_rdf12() { self.ensure_rdf_predicate(&predicate)?; }
         let (object, mut object_generated) = self.parse_term()?;
         if self.profile.is_rdf12() {
             self.ensure_rdf_triple_object(&object)?;
-            if !object_generated.is_empty() && !generated_are_rdf12_reifications(&object_generated) { return Err(EyeronError::new("compound object is not allowed inside an RDF triple term")); }
+            if !object_generated.is_empty() && !generated_are_rdf12_reifications(&object_generated) { return Err(EuleronError::new("compound object is not allowed inside an RDF triple term")); }
         }
         generated.append(&mut object_generated);
         if parenthesized { self.expect(TokenKind::RParen)?; }
@@ -999,16 +999,16 @@ impl Parser {
         if self.check(&TokenKind::HatHat) {
             self.advance();
             let (dt, generated) = self.parse_term()?;
-            if !generated.is_empty() { return Err(EyeronError::new("datatype cannot generate triples")); }
+            if !generated.is_empty() { return Err(EuleronError::new("datatype cannot generate triples")); }
             match dt {
                 Term::Iri(i) => {
                     if self.profile.is_line_syntax() { self.ensure_absolute_iri(&i, "N-Triples/N-Quads datatype IRI")?; }
                     if self.profile.is_rdf12() && (i == RDF_LANG_STRING || i == RDF_DIR_LANG_STRING) {
-                        return Err(EyeronError::new("rdf:langString and rdf:dirLangString require language-tag syntax"));
+                        return Err(EuleronError::new("rdf:langString and rdf:dirLangString require language-tag syntax"));
                     }
                     lit.datatype = Some(i)
                 }
-                _ => return Err(EyeronError::new("datatype must be an IRI")),
+                _ => return Err(EuleronError::new("datatype must be an IRI")),
             }
         } else if let TokenKind::Lang(lang) = self.peek_kind() {
             let lang = lang.clone();
@@ -1023,7 +1023,7 @@ impl Parser {
         if self.profile.is_rdf12()
             && matches!(self.peek_kind(), TokenKind::PName(p) if p == "--ltr" || p == "--rtl")
         {
-            return Err(EyeronError::at("base direction requires a language tag", self.peek().offset));
+            return Err(EuleronError::at("base direction requires a language tag", self.peek().offset));
         }
         Ok((Term::Literal(lit), Vec::new()))
     }
@@ -1072,8 +1072,8 @@ impl Parser {
 
     fn parse_pname_or_path(&mut self, pname: &str, offset: usize) -> Result<(Term, Vec<Triple>)> {
         if self.profile.is_rdf12() {
-            if contains_unescaped_path_operator(pname) { return Err(EyeronError::at("property paths are not RDF syntax", offset)); }
-            if !pname.contains(':') { return Err(EyeronError::at(format!("expected IRI or prefixed name, got {}", pname), offset)); }
+            if contains_unescaped_path_operator(pname) { return Err(EuleronError::at("property paths are not RDF syntax", offset)); }
+            if !pname.contains(':') { return Err(EuleronError::at(format!("expected IRI or prefixed name, got {}", pname), offset)); }
         } else if contains_unescaped_path_operator(pname) {
             return self.parse_path_pname(pname, offset);
         }
@@ -1100,7 +1100,7 @@ impl Parser {
     fn expand_pname(&self, pname: &str, offset: usize) -> Result<String> {
         if let Some((prefix, local)) = pname.split_once(':') {
             let Some(base) = self.doc.prefixes.get(prefix) else {
-                return Err(EyeronError::at(format!("unknown prefix '{}:'", prefix), offset));
+                return Err(EuleronError::at(format!("unknown prefix '{}:'", prefix), offset));
             };
             let local = if self.profile.is_rdf12() { decode_and_validate_pname_local(local, offset)? } else { local.to_string() };
             return Ok(format!("{}{}", base, local));
@@ -1149,9 +1149,9 @@ impl Parser {
     fn ensure_rdf_subject(&self, term: &Term) -> Result<()> {
         match term {
             Term::Iri(_) | Term::Blank(_) | Term::List(_) => Ok(()),
-            Term::Literal(_) => Err(EyeronError::new("RDF subject cannot be a literal")),
-            Term::Formula(_) => Err(EyeronError::new("RDF triple terms cannot be used as subjects")),
-            Term::Var(_) => Err(EyeronError::new("variables are not allowed in RDF syntax")),
+            Term::Literal(_) => Err(EuleronError::new("RDF subject cannot be a literal")),
+            Term::Formula(_) => Err(EuleronError::new("RDF triple terms cannot be used as subjects")),
+            Term::Var(_) => Err(EuleronError::new("variables are not allowed in RDF syntax")),
         }
     }
 
@@ -1159,7 +1159,7 @@ impl Parser {
         match term {
             Term::Iri(iri) => self.ensure_absolute_iri(iri, "N-Triples/N-Quads subject"),
             Term::Blank(_) => Ok(()),
-            _ => Err(EyeronError::new("N-Triples/N-Quads subject must be an IRI or blank node")),
+            _ => Err(EuleronError::new("N-Triples/N-Quads subject must be an IRI or blank node")),
         }
     }
 
@@ -1168,7 +1168,7 @@ impl Parser {
             Term::Iri(iri) => self.ensure_absolute_iri(iri, "N-Triples/N-Quads object"),
             Term::Blank(_) | Term::Literal(_) => Ok(()),
             Term::Formula(triples) if triples.len() == 1 => Ok(()),
-            _ => Err(EyeronError::new("N-Triples/N-Quads object must be an IRI, blank node, literal, or parenthesized triple term")),
+            _ => Err(EuleronError::new("N-Triples/N-Quads object must be an IRI, blank node, literal, or parenthesized triple term")),
         }
     }
 
@@ -1176,14 +1176,14 @@ impl Parser {
         match term {
             Term::Iri(iri) => self.ensure_absolute_iri(iri, "graph label"),
             Term::Blank(_) => Ok(()),
-            _ => Err(EyeronError::new("graph label must be an IRI or blank node")),
+            _ => Err(EuleronError::new("graph label must be an IRI or blank node")),
         }
     }
 
     fn ensure_rdf_predicate(&self, term: &Term) -> Result<()> {
         match term {
             Term::Iri(iri) => self.ensure_absolute_iri(iri, "RDF predicate"),
-            _ => Err(EyeronError::new("RDF predicate must be an IRI")),
+            _ => Err(EuleronError::new("RDF predicate must be an IRI")),
         }
     }
 
@@ -1191,7 +1191,7 @@ impl Parser {
         match term {
             Term::Iri(_) | Term::Blank(_) => Ok(()),
             Term::Formula(triples) if triples.len() == 1 => Ok(()),
-            _ => Err(EyeronError::new("RDF triple-term subject must be an IRI, blank node, or triple term")),
+            _ => Err(EuleronError::new("RDF triple-term subject must be an IRI, blank node, or triple term")),
         }
     }
 
@@ -1199,13 +1199,13 @@ impl Parser {
         match term {
             Term::Iri(_) | Term::Blank(_) | Term::Literal(_) => Ok(()),
             Term::Formula(triples) if triples.len() == 1 => Ok(()),
-            _ => Err(EyeronError::new("RDF triple-term object must be an IRI, blank node, literal, or triple term")),
+            _ => Err(EuleronError::new("RDF triple-term object must be an IRI, blank node, literal, or triple term")),
         }
     }
 
     fn ensure_absolute_iri(&self, iri: &str, position: &str) -> Result<()> {
         if self.profile.is_line_syntax() && !has_uri_scheme(iri) {
-            Err(EyeronError::new(format!("{} must be absolute", position)))
+            Err(EuleronError::new(format!("{} must be absolute", position)))
         } else {
             Ok(())
         }
@@ -1227,7 +1227,7 @@ impl Parser {
             self.advance();
             Ok(())
         } else {
-            Err(EyeronError::at(format!("expected {:?}, got {:?}", expected, self.peek_kind()), self.peek().offset))
+            Err(EuleronError::at(format!("expected {:?}, got {:?}", expected, self.peek_kind()), self.peek().offset))
         }
     }
 
@@ -1393,22 +1393,22 @@ fn remove_last_path_segment(output: &mut String) {
 
 fn validate_blank_label(value: &str, offset: usize) -> Result<()> {
     if value.is_empty() || value.ends_with('.') || value.contains("..") {
-        return Err(EyeronError::at("invalid blank node label", offset));
+        return Err(EuleronError::at("invalid blank node label", offset));
     }
     let mut chars = value.chars();
-    let Some(first) = chars.next() else { return Err(EyeronError::at("invalid blank node label", offset)); };
+    let Some(first) = chars.next() else { return Err(EuleronError::at("invalid blank node label", offset)); };
     if matches!(first, '-' | '.') || !(first == '_' || first.is_alphanumeric()) {
-        return Err(EyeronError::at("invalid blank node label", offset));
+        return Err(EuleronError::at("invalid blank node label", offset));
     }
     if value.chars().any(|c| c.is_whitespace() || matches!(c, '<' | '>' | '"' | '{' | '}' | '|' | '^' | '`' | '\\' | ':')) {
-        return Err(EyeronError::at("invalid blank node label", offset));
+        return Err(EuleronError::at("invalid blank node label", offset));
     }
     Ok(())
 }
 
 fn validate_prefix_label(value: &str, offset: usize) -> Result<()> {
     if value.ends_with('.') || value.contains("..") {
-        return Err(EyeronError::at("invalid prefix label", offset));
+        return Err(EuleronError::at("invalid prefix label", offset));
     }
     Ok(())
 }
@@ -1417,15 +1417,15 @@ fn validate_lang_or_lang_dir(raw: &str, offset: usize) -> Result<(String, Option
     let (lang, dir) = if let Some(lang) = raw.strip_suffix("--ltr") { (lang, Some("ltr")) }
         else if let Some(lang) = raw.strip_suffix("--rtl") { (lang, Some("rtl")) }
         else { (raw, None) };
-    if lang.is_empty() || lang.contains("--") { return Err(EyeronError::at("invalid language tag", offset)); }
+    if lang.is_empty() || lang.contains("--") { return Err(EuleronError::at("invalid language tag", offset)); }
     let mut parts = lang.split('-');
-    let Some(first) = parts.next() else { return Err(EyeronError::at("invalid language tag", offset)); };
+    let Some(first) = parts.next() else { return Err(EuleronError::at("invalid language tag", offset)); };
     if first.is_empty() || first.len() > 8 || !first.chars().all(|c| c.is_ascii_alphabetic()) {
-        return Err(EyeronError::at("invalid language tag", offset));
+        return Err(EuleronError::at("invalid language tag", offset));
     }
     for part in parts {
         if part.is_empty() || part.len() > 8 || !part.chars().all(|c| c.is_ascii_alphanumeric()) {
-            return Err(EyeronError::at("invalid language tag", offset));
+            return Err(EuleronError::at("invalid language tag", offset));
         }
     }
     Ok((lang.to_string(), dir))
@@ -1434,15 +1434,15 @@ fn validate_lang_or_lang_dir(raw: &str, offset: usize) -> Result<(String, Option
 fn decode_and_validate_pname_local(raw: &str, offset: usize) -> Result<String> {
     if raw.is_empty() { return Ok(String::new()); }
     if raw.starts_with('-') || raw.starts_with("\\-") || raw.starts_with('.') {
-        return Err(EyeronError::at("invalid prefixed-name local part", offset));
+        return Err(EuleronError::at("invalid prefixed-name local part", offset));
     }
     let mut out = String::new();
     let mut chars = raw.chars().peekable();
     while let Some(ch) = chars.next() {
         if ch == '\\' {
-            let Some(esc) = chars.next() else { return Err(EyeronError::at("trailing prefixed-name escape", offset)); };
+            let Some(esc) = chars.next() else { return Err(EuleronError::at("trailing prefixed-name escape", offset)); };
             if !"_~.-!$&'()*+,;=/?#@%".contains(esc) {
-                return Err(EyeronError::at("invalid prefixed-name escape", offset));
+                return Err(EuleronError::at("invalid prefixed-name escape", offset));
             }
             out.push(esc);
         } else if ch == '%' {
@@ -1452,10 +1452,10 @@ fn decode_and_validate_pname_local(raw: &str, offset: usize) -> Result<String> {
                 (Some(a), Some(b)) if a.is_ascii_hexdigit() && b.is_ascii_hexdigit() => {
                     out.push('%'); out.push(a); out.push(b);
                 }
-                _ => return Err(EyeronError::at("invalid percent escape in prefixed-name local part", offset)),
+                _ => return Err(EuleronError::at("invalid percent escape in prefixed-name local part", offset)),
             }
         } else {
-            if matches!(ch, '~' | '^') { return Err(EyeronError::at("invalid prefixed-name local part", offset)); }
+            if matches!(ch, '~' | '^') { return Err(EuleronError::at("invalid prefixed-name local part", offset)); }
             out.push(ch);
         }
     }
@@ -1464,7 +1464,7 @@ fn decode_and_validate_pname_local(raw: &str, offset: usize) -> Result<String> {
 
 fn validate_n3_literal_value(value: &str) -> Result<()> {
     if value.chars().any(|c| matches!(c, '\u{0000}' | '\u{FFFE}' | '\u{FFFF}')) {
-        return Err(EyeronError::new("forbidden character in N3 string literal"));
+        return Err(EuleronError::new("forbidden character in N3 string literal"));
     }
     Ok(())
 }
@@ -1502,7 +1502,7 @@ fn split_unescaped_path(value: &str, offset: usize) -> Result<Vec<(char, String)
             continue;
         }
         if ch == '!' || ch == '^' {
-            if buf.is_empty() { return Err(EyeronError::at("empty path component", offset)); }
+            if buf.is_empty() { return Err(EuleronError::at("empty path component", offset)); }
             parts.push((op, buf.clone()));
             buf.clear();
             op = ch;
@@ -1510,8 +1510,8 @@ fn split_unescaped_path(value: &str, offset: usize) -> Result<Vec<(char, String)
             buf.push(ch);
         }
     }
-    if escaped { return Err(EyeronError::at("trailing path escape", offset)); }
-    if buf.is_empty() { return Err(EyeronError::at("empty path component", offset)); }
+    if escaped { return Err(EuleronError::at("trailing path escape", offset)); }
+    if buf.is_empty() { return Err(EuleronError::at("empty path component", offset)); }
     parts.push((op, buf));
     Ok(parts)
 }
@@ -1528,7 +1528,7 @@ fn rdf_number_literal(value: String, offset: usize) -> Result<Term> {
     } else if is_double_lexical(&value) {
         "http://www.w3.org/2001/XMLSchema#double"
     } else {
-        return Err(EyeronError::at("invalid numeric literal", offset));
+        return Err(EuleronError::at("invalid numeric literal", offset));
     };
     Ok(Term::Literal(Literal { value, datatype: Some(datatype.to_string()), language: None }))
 }
