@@ -1,2 +1,2 @@
 [alias]
-playground = "run --release --bin feye-playground-build --"
+playground = "run --release --bin eyeron-playground-build --"

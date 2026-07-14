@@ -2,7 +2,7 @@ use std::process::Command;
 
 #[test]
 fn streams_turtle_style_rdf_message_directives() {
-    let output = Command::new(env!("CARGO_BIN_EXE_feye"))
+    let output = Command::new(env!("CARGO_BIN_EXE_eyeron"))
         .args([
             "-r",
             "--stream-messages",
@@ -10,7 +10,7 @@ fn streams_turtle_style_rdf_message_directives() {
             "tests/input/alma-rdf-messages-small.nt",
         ])
         .output()
-        .expect("run feye");
+        .expect("run eyeron");
 
     assert!(
         output.status.success(),

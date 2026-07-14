@@ -1,9 +1,9 @@
-use feye::error::{FeyeError, Result};
-use feye::printing::{document_debug, rdf_result_to_string, result_to_string};
-use feye::proof::proof_to_n3;
-use feye::reasoner::{reason, ReasonerOptions};
-use feye::Document;
-use feye::{
+use eyeron::error::{EyeronError, Result};
+use eyeron::printing::{document_debug, rdf_result_to_string, result_to_string};
+use eyeron::proof::proof_to_n3;
+use eyeron::reasoner::{reason, ReasonerOptions};
+use eyeron::Document;
+use eyeron::{
     is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log,
     RdfFormat,
 };
@@ -28,7 +28,7 @@ struct CliOptions {
 
 fn main() {
     if let Err(err) = run() {
-        eprintln!("feye: {}", err);
+        eprintln!("eyeron: {}", err);
         std::process::exit(1);
     }
 }
@@ -43,7 +43,7 @@ fn run() -> Result<()> {
 
     if opt.stream {
         eprintln!(
-            "warning: --stream is accepted; Feye currently emits after the fixpoint is reached"
+            "warning: --stream is accepted; Eyeron currently emits after the fixpoint is reached"
         );
     }
     if opt.stream_messages {
@@ -71,7 +71,7 @@ fn run() -> Result<()> {
         };
         match parsed {
             Ok(doc) => merged.merge(doc),
-            Err(err) => return Err(FeyeError::new(err.with_source_location(text, label))),
+            Err(err) => return Err(EyeronError::new(err.with_source_location(text, label))),
         }
     }
 
@@ -86,7 +86,7 @@ fn run() -> Result<()> {
     };
     let result = reason(&merged, &reasoner_options);
     if let Some(summary) = result.incomplete_summary() {
-        return Err(FeyeError::new(summary));
+        return Err(EyeronError::new(summary));
     }
     if opt.proof {
         print!("{}", proof_to_n3(&merged.prefixes, &result));
@@ -103,10 +103,10 @@ fn run() -> Result<()> {
 
 fn run_stream_messages(opt: &CliOptions) -> Result<()> {
     if !opt.rdf {
-        return Err(FeyeError::new("--stream-messages requires -r/--rdf"));
+        return Err(EyeronError::new("--stream-messages requires -r/--rdf"));
     }
     if opt.ast || opt.proof || opt.stream {
-        return Err(FeyeError::new(
+        return Err(EyeronError::new(
             "--stream-messages cannot be combined with --ast, --proof, or --stream",
         ));
     }
@@ -130,12 +130,12 @@ fn run_stream_messages(opt: &CliOptions) -> Result<()> {
         } else {
             let base = opt.base_iri.as_deref().or_else(|| None);
             let parsed = parse_n3_with_source(&text, base, Some(source))
-                .map_err(|err| FeyeError::new(err.with_source_location(&text, source)))?;
+                .map_err(|err| EyeronError::new(err.with_source_location(&text, source)))?;
             program.merge(parsed);
         }
     }
     if message_sources.is_empty() {
-        return Err(FeyeError::new(
+        return Err(EyeronError::new(
             "--stream-messages did not find any RDF Message Log input",
         ));
     }
@@ -151,7 +151,7 @@ fn run_stream_messages(opt: &CliOptions) -> Result<()> {
         if is_http_url(&source) {
             let response = ureq::get(&source)
                 .call()
-                .map_err(|err| FeyeError::new(format!("failed to fetch {source}: {err}")))?;
+                .map_err(|err| EyeronError::new(format!("failed to fetch {source}: {err}")))?;
             let final_url = response.get_url().to_string();
             stream_message_reader(
                 BufReader::new(response.into_reader()),
@@ -160,7 +160,7 @@ fn run_stream_messages(opt: &CliOptions) -> Result<()> {
                 &program,
             )?;
         } else if source == "-" {
-            return Err(FeyeError::new(
+            return Err(EyeronError::new(
                 "stdin RDF Message Logs cannot follow another stdin read",
             ));
         } else {
@@ -192,7 +192,7 @@ fn stream_message_reader<R: BufRead>(
     loop {
         line.clear();
         let bytes = reader.read_line(&mut line).map_err(|err| {
-            FeyeError::new(format!("failed to read response from {label}: {err}"))
+            EyeronError::new(format!("failed to read response from {label}: {err}"))
         })?;
         if bytes == 0 {
             break;
@@ -230,7 +230,7 @@ fn stream_message_reader<R: BufRead>(
         }
     }
     if !saw_version {
-        return Err(FeyeError::new(format!(
+        return Err(EyeronError::new(format!(
             "not an RDF Message Log: missing VERSION \"*-messages\" directive in {label}"
         )));
     }
@@ -259,7 +259,7 @@ fn run_one_message(
     let message_label = format!("{label}#message-{index}");
     let mut merged = program.clone();
     let parsed = parse_rdf_message_log(&replay, base)
-        .map_err(|err| FeyeError::new(err.with_source_location(&replay, &message_label)))?;
+        .map_err(|err| EyeronError::new(err.with_source_location(&replay, &message_label)))?;
     merged.merge(parsed);
     let options = ReasonerOptions {
         proof: false,
@@ -267,7 +267,7 @@ fn run_one_message(
     };
     let result = reason(&merged, &options);
     if let Some(summary) = result.incomplete_summary() {
-        return Err(FeyeError::new(summary));
+        return Err(EyeronError::new(summary));
     }
     print!(
         "{}",
@@ -298,10 +298,10 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 let flag = args[i].clone();
                 i += 1;
                 if i >= args.len() {
-                    return Err(FeyeError::new(format!("{} requires a value", flag)));
+                    return Err(EyeronError::new(format!("{} requires a value", flag)));
                 }
                 eprintln!(
-                    "warning: {} is accepted for CLI compatibility but not implemented in Feye",
+                    "warning: {} is accepted for CLI compatibility but not implemented in Eyeron",
                     flag
                 );
             }
@@ -309,7 +309,7 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             "--base-iri" | "--base" => {
                 i += 1;
                 if i >= args.len() {
-                    return Err(FeyeError::new(format!(
+                    return Err(EyeronError::new(format!(
                         "{} requires a value",
                         args[i - 1]
                     )));
@@ -318,12 +318,12 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
             }
             "--store-clear" | "--enforce-https" => {
                 eprintln!(
-                    "warning: {} is accepted for CLI compatibility but not implemented in Feye",
+                    "warning: {} is accepted for CLI compatibility but not implemented in Eyeron",
                     args[i]
                 );
             }
             other if other.starts_with('-') && other != "-" => {
-                return Err(FeyeError::new(format!("unknown option {}", other)));
+                return Err(EyeronError::new(format!("unknown option {}", other)));
             }
             file => opt.files.push(file.to_string()),
         }
@@ -351,7 +351,7 @@ fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat
     match (format, extension.as_deref(), rdf_mode) {
         (Some(format), _, _) => Ok(Some(format)),
         (None, Some("n3"), _) => Ok(None),
-        (None, _, true) => Err(FeyeError::new(format!(
+        (None, _, true) => Err(EyeronError::new(format!(
             "cannot infer RDF format for {}; use .ttl, .nt, .nq, .trig, or .n3",
             label
         ))),
@@ -375,10 +375,10 @@ fn read_sources(files: &[String]) -> Result<Vec<(String, String)>> {
         } else if is_http_url(f) {
             let response = ureq::get(f)
                 .call()
-                .map_err(|err| FeyeError::new(format!("failed to fetch {f}: {err}")))?;
+                .map_err(|err| EyeronError::new(format!("failed to fetch {f}: {err}")))?;
             let final_url = response.get_url().to_string();
             let text = response.into_string().map_err(|err| {
-                FeyeError::new(format!("failed to read response from {f}: {err}"))
+                EyeronError::new(format!("failed to read response from {f}: {err}"))
             })?;
             out.push((final_url, text));
         } else {
@@ -416,9 +416,9 @@ fn percent_encode_path(path: &str) -> String {
 }
 
 fn print_help() {
-    println!("feye {}", VERSION);
+    println!("eyeron {}", VERSION);
     println!();
-    println!("Usage: feye [options] [file-or-url|- ...]");
+    println!("Usage: eyeron [options] [file-or-url|- ...]");
     println!();
     println!("Options:");
     println!("  -a, --ast                     Print parsed AST/debug form and exit");

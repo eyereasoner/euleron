@@ -4,7 +4,7 @@
 #
 # Run as:
 #
-#   feye -r examples/rdf-messages.n3 examples/input/rdf-messages.trig
+#   eyeron -r examples/rdf-messages.n3 examples/input/rdf-messages.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../README.md#rdf-messages
@@ -19,7 +19,7 @@
 #
 # This example now uses the parser-level syntax directly: the companion input
 # starts with VERSION "1.2-messages" and separates messages with MESSAGE
-# delimiters. Feye handles those delimiters before N3 reasoning starts and
+# delimiters. Eyeron handles those delimiters before N3 reasoning starts and
 # exposes an internal eymsg: replay view: a stream resource, ordered envelopes,
 # next-envelope links, payload kind, and one payload graph per non-empty message.
 #
@@ -71,7 +71,7 @@
 }.
 
 # The input deliberately reuses the same source-local blank-node label in message
-# 1 and message 3. Feye rewrites labels per message, so these are distinct
+# 1 and message 3. Eyeron rewrites labels per message, so these are distinct
 # blank nodes after replay.
 {
   ?Stream a eymsg:RDFMessageStream;
@@ -90,7 +90,7 @@
   :MessageContext :differentObservationsStayContextual true.
 }.
 
-# The Feye verdict is emitted only when all parser-replayed message-specific
+# The Eyeron verdict is emitted only when all parser-replayed message-specific
 # validations have been derived from the stream, ordered envelopes, payload
 # graphs, and built-ins.
 {
@@ -108,7 +108,7 @@
     :payloadResult ?SecondResult.
   :BlankNodeScope :reusedSourceLabelIsMessageScoped true.
   :MessageContext :differentObservationsStayContextual true.
-  ("# rdf-messages\n\n## Source files\n\n- [N3 rules](../rdf-messages.n3)\n- [Input RDF Message Log](../input/rdf-messages.trig)\n\n## Answer\nRDF Message Log accepted: %d parser-replayed message boundaries are preserved. The middle message is an empty heartbeat, and the same source-local blank-node label is safely reused because Feye scopes blank nodes per message.\n\n## Explanation\nThe input now uses VERSION \\\"1.2-messages\\\" and MESSAGE delimiters instead of hand-written application envelope facts. Feye parses the log internally into an eymsg: replay view with ordered envelopes and one payload graph per non-empty message. The rules inspect each payload with log:includes inside its own message formula, so the observation data stays inside the message boundary instead of being treated as one global graph. The two temperature results, %s and %s, are different observations from the same stream and remain contextualized by their message boundaries." ?Count ?FirstResult ?SecondResult) string:format ?Block.
+  ("# rdf-messages\n\n## Source files\n\n- [N3 rules](../rdf-messages.n3)\n- [Input RDF Message Log](../input/rdf-messages.trig)\n\n## Answer\nRDF Message Log accepted: %d parser-replayed message boundaries are preserved. The middle message is an empty heartbeat, and the same source-local blank-node label is safely reused because Eyeron scopes blank nodes per message.\n\n## Explanation\nThe input now uses VERSION \\\"1.2-messages\\\" and MESSAGE delimiters instead of hand-written application envelope facts. Eyeron parses the log internally into an eymsg: replay view with ordered envelopes and one payload graph per non-empty message. The rules inspect each payload with log:includes inside its own message formula, so the observation data stays inside the message boundary instead of being treated as one global graph. The two temperature results, %s and %s, are different observations from the same stream and remain contextualized by their message boundaries." ?Count ?FirstResult ?SecondResult) string:format ?Block.
 } => {
   :rdfMessagesExample log:outputString ?Block.
   :rdfMessagesExample :demonstrates :ParserLevelMessageLog, :ExplicitBoundaries, :AtomicMessageContext, :EmptyHeartbeat, :MessageScopedBlankNodes.

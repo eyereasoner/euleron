@@ -1,4 +1,4 @@
-use feye::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, proof_to_n3, rdf_result_to_string, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
+use eyeron::{is_rdf_message_log, parse_n3, parse_n3_with_source, parse_rdf12, parse_rdf_message_log, proof_to_n3, rdf_result_to_string, reason, reason_document, result_to_string, Document, RdfFormat, ReasonerOptions};
 
 fn check_golden_non_prefix_lines(name: &str, source: &str, golden: &str) -> std::result::Result<(), String> {
     let out = reason(source).map_err(|err| format!("{} failed: {}", name, err))?;
@@ -125,8 +125,8 @@ fn rdf12_annotations_share_n3_lexer_parser_profile() {
     "#;
     let doc = parse_rdf12(input, Some("http://example.org/base"), RdfFormat::Turtle).unwrap();
     let reifies = "http://www.w3.org/1999/02/22-rdf-syntax-ns#reifies";
-    assert!(doc.facts.iter().any(|t| matches!(&t.p, feye::Term::Iri(p) if p == reifies)), "{:#?}", doc.facts);
-    assert!(doc.facts.iter().any(|t| matches!(&t.p, feye::Term::Iri(p) if p == "http://example.org/source")), "{:#?}", doc.facts);
+    assert!(doc.facts.iter().any(|t| matches!(&t.p, eyeron::Term::Iri(p) if p == reifies)), "{:#?}", doc.facts);
+    assert!(doc.facts.iter().any(|t| matches!(&t.p, eyeron::Term::Iri(p) if p == "http://example.org/source")), "{:#?}", doc.facts);
 }
 
 #[test]
@@ -136,7 +136,7 @@ fn rdf12_parenthesized_triple_terms_remain_terms() {
         :s :p <<(:a :b :c)>> .
     "#;
     let doc = parse_rdf12(input, Some("http://example.org/base"), RdfFormat::Turtle).unwrap();
-    assert!(doc.facts.iter().any(|t| matches!(&t.o, feye::Term::Formula(inner) if inner.len() == 1)), "{:#?}", doc.facts);
+    assert!(doc.facts.iter().any(|t| matches!(&t.o, eyeron::Term::Formula(inner) if inner.len() == 1)), "{:#?}", doc.facts);
 }
 
 
@@ -244,8 +244,8 @@ fn age_example_supports_current_time_date_difference_and_duration_comparison() {
     let result = reason_document(&doc, &ReasonerOptions { proof: true, ..ReasonerOptions::default() });
 
     assert!(result.derived.iter().any(|triple| {
-        triple.s == feye::Term::Iri("https://example.org/#test".to_string())
-            && triple.p == feye::Term::Iri("https://example.org/#is".to_string())
+        triple.s == eyeron::Term::Iri("https://example.org/#test".to_string())
+            && triple.p == eyeron::Term::Iri("https://example.org/#is".to_string())
     }));
     let proof = proof_to_n3(&doc.prefixes, &result);
     assert!(proof.contains("pe:builtin time:localTime"), "{proof}");
@@ -264,8 +264,8 @@ fn playground_html_is_packaged_for_browser_wasm() {
     let html = fs::read_to_string(&playground)
         .unwrap_or_else(|err| panic!("failed to read {}: {}", playground.display(), err));
 
-    assert!(html.contains("The Feye N3 Playground"), "{}", playground.display());
-    assert!(html.contains("./pkg/feye.js"), "playground should load the wasm-pack web bundle");
+    assert!(html.contains("The Eyeron N3 Playground"), "{}", playground.display());
+    assert!(html.contains("./pkg/eyeron.js"), "playground should load the wasm-pack web bundle");
     assert!(html.contains("reasonWithData"), "playground should expose separate data + N3 program reasoning");
 
     let examples_dir = root.join("examples");
@@ -566,45 +566,45 @@ fn all_packaged_example_goldens_match_expected_lines() {
 
 #[test]
 fn rdf12_turtle_profile_parses_lists_through_shared_parser() {
-    let doc = feye::parse_rdf12(
+    let doc = eyeron::parse_rdf12(
         r#"PREFIX : <http://example.org/>
 :s :p (1 2) ."#,
         Some("http://example.org/base"),
-        feye::RdfFormat::Turtle,
+        eyeron::RdfFormat::Turtle,
     ).unwrap();
-    let json = feye::rdf12_json(&doc);
+    let json = eyeron::rdf12_json(&doc);
     assert!(json.contains("http://www.w3.org/1999/02/22-rdf-syntax-ns#first"), "{}", json);
     assert!(json.contains("http://www.w3.org/1999/02/22-rdf-syntax-ns#rest"), "{}", json);
 }
 
 #[test]
 fn rdf12_trig_profile_materializes_named_graphs_as_quads() {
-    let doc = feye::parse_rdf12(
+    let doc = eyeron::parse_rdf12(
         r#"PREFIX : <http://example.org/>
 :g { :s :p :o . }"#,
         None,
-        feye::RdfFormat::Trig,
+        eyeron::RdfFormat::Trig,
     ).unwrap();
-    let json = feye::rdf12_json(&doc);
+    let json = eyeron::rdf12_json(&doc);
     assert!(json.contains("\"graph\":{\"termType\":\"NamedNode\",\"value\":\"http://example.org/g\"}"), "{}", json);
 }
 
 #[test]
 fn rdf12_parenthesized_triple_terms_use_formula_term_representation() {
-    let doc = feye::parse_rdf12(
+    let doc = eyeron::parse_rdf12(
         r#"PREFIX : <http://example.org/>
 :s :p <<(:a :b :c)>> ."#,
         None,
-        feye::RdfFormat::Turtle,
+        eyeron::RdfFormat::Turtle,
     ).unwrap();
-    let json = feye::rdf12_json(&doc);
+    let json = eyeron::rdf12_json(&doc);
     assert!(json.contains("\"termType\":\"Quad\""), "{}", json);
     assert!(json.contains("http://example.org/a"), "{}", json);
 }
 
 #[test]
 fn reasoner_reports_iteration_limit_instead_of_silent_partial_success() {
-    use feye::{CompletionStatus, ReasonerLimit};
+    use eyeron::{CompletionStatus, ReasonerLimit};
 
     let doc = parse_n3(
         r#"
@@ -628,7 +628,7 @@ fn reasoner_reports_iteration_limit_instead_of_silent_partial_success() {
 
 #[test]
 fn reasoner_reports_match_step_limit() {
-    use feye::{CompletionStatus, ReasonerLimit};
+    use eyeron::{CompletionStatus, ReasonerLimit};
 
     let doc = parse_n3(
         r#"
@@ -669,7 +669,7 @@ fn resource_builtin_uses_deterministic_hello_fixture() {
 
 #[test]
 fn unbound_not_includes_constructs_an_existential_witness_formula() {
-    use feye::Term;
+    use eyeron::Term;
 
     let doc = parse_n3(
         r#"
@@ -723,8 +723,8 @@ fn lookaround_regex_syntax_uses_compatibility_matching() {
 
 #[test]
 fn proof_output_marks_missing_support_as_unproven() {
-    use feye::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
-    use feye::reasoner::DerivedFact;
+    use eyeron::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
+    use eyeron::reasoner::DerivedFact;
     use std::collections::BTreeMap;
 
     let missing = Triple::new(Term::iri("http://example.org/a"), Term::iri("http://example.org/p"), Term::iri("http://example.org/b"));
@@ -773,7 +773,7 @@ fn regex_replacement_preserves_n3_dollar_and_backslash_escapes() {
 
 #[test]
 fn high_level_reason_does_not_fabricate_unknown_resource_content() {
-    let output = feye::reason(
+    let output = eyeron::reason(
         r#"
             @prefix : <http://example.org/> .
             @prefix log: <http://www.w3.org/2000/10/swap/log#> .
@@ -787,8 +787,8 @@ fn high_level_reason_does_not_fabricate_unknown_resource_content() {
 
 #[test]
 fn proof_output_recognizes_compatible_lookaround_builtin() {
-    use feye::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
-    use feye::reasoner::DerivedFact;
+    use eyeron::{CompletionStatus, ReasonerResult, ReasonerStatistics, Rule, Term, Triple};
+    use eyeron::reasoner::DerivedFact;
     use std::collections::BTreeMap;
 
     let compatible_builtin = Triple::new(
@@ -828,7 +828,7 @@ fn proof_output_recognizes_compatible_lookaround_builtin() {
 
 #[test]
 fn log_name_of_remains_an_ordinary_graph_predicate() {
-    use feye::Term;
+    use eyeron::Term;
 
     let doc = parse_n3(
         r#"

@@ -15,7 +15,7 @@ pub const LOG_IMPLIES: &str = "http://www.w3.org/2000/10/swap/log#implies";
 pub const LOG_IMPLIED_BY: &str = "http://www.w3.org/2000/10/swap/log#impliedBy";
 /// Internal marker used for rule conclusions like `=> ?F`, where the
 /// RHS resolves to a quoted formula whose contents should be unquoted.
-pub const FEYE_UNQUOTE: &str = "urn:feye:unquote";
+pub const EYERON_UNQUOTE: &str = "urn:eyeron:unquote";
 pub const LOG_COLLECT_ALL_IN: &str = "http://www.w3.org/2000/10/swap/log#collectAllIn";
 pub const LOG_FOR_ALL_IN: &str = "http://www.w3.org/2000/10/swap/log#forAllIn";
 pub const LOG_CONCLUSION: &str = "http://www.w3.org/2000/10/swap/log#conclusion";
@@ -230,7 +230,7 @@ pub fn default_prefixes() -> BTreeMap<String, String> {
     m.insert("time".to_string(), "http://www.w3.org/2000/10/swap/time#".to_string());
     m.insert("crypto".to_string(), "http://www.w3.org/2000/10/swap/crypto#".to_string());
     m.insert("eymsg".to_string(), "https://eyereasoner.github.io/eyeling/vocab/message#".to_string());
-    m.insert("dt".to_string(), "https://eyereasoner.github.io/feye/datatype#".to_string());
+    m.insert("dt".to_string(), "https://eyereasoner.github.io/eyeron/datatype#".to_string());
     m.insert("genid".to_string(), "https://eyereasoner.github.io/.well-known/genid/".to_string());
     m
 }

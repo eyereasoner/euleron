@@ -1,23 +1,23 @@
 {
-  "name": "feye",
+  "name": "eyeron",
   "type": "module",
   "collaborators": [
     "Jos De Roo"
   ],
   "description": "A native Rust Notation3 reasoner.",
-  "version": "0.3.18",
+  "version": "0.3.17",
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/eyereasoner/feye"
+    "url": "https://github.com/eyereasoner/eyeron"
   },
   "files": [
-    "feye_bg.wasm",
-    "feye.js",
-    "feye.d.ts"
+    "eyeron_bg.wasm",
+    "eyeron.js",
+    "eyeron.d.ts"
   ],
-  "main": "feye.js",
-  "types": "feye.d.ts",
+  "main": "eyeron.js",
+  "types": "eyeron.d.ts",
   "sideEffects": [
     "./snippets/*"
   ]

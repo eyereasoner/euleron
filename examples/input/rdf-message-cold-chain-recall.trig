@@ -4,7 +4,7 @@
 #
 # This file is the data half of the runnable example:
 #
-#   feye -r examples/rdf-message-cold-chain-recall.n3 examples/input/rdf-message-cold-chain-recall.trig
+#   eyeron -r examples/rdf-message-cold-chain-recall.n3 examples/input/rdf-message-cold-chain-recall.trig
 #
 # See the README section on RDF Message Log replay under -r:
 #   ../../README.md#rdf-messages
@@ -39,7 +39,7 @@ in:run a see:InputDataset ;
   see:title "RDF Message Cold Chain Recall" ;
   see:sourceFile "examples/rdf-message-cold-chain-recall.n3" ;
   see:description "Forty-eight cold-chain telemetry members serialized as RDF Messages; the rules resume after a sequence checkpoint and repair contradictory tail evidence." ;
-  see:compiler "Feye RDF Message Log input" .
+  see:compiler "Eyeron RDF Message Log input" .
 
 MESSAGE
 # Message 2: historical telemetry member 001, already committed by the checkpoint.
