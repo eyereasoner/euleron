@@ -23,10 +23,6 @@ struct CliOptions {
     stream: bool,
     stream_messages: bool,
     base_iri: Option<String>,
-    max_iterations: Option<usize>,
-    max_match_steps: Option<usize>,
-    max_backward_depth: Option<usize>,
-    max_backward_solutions_per_goal: Option<usize>,
     files: Vec<String>,
 }
 
@@ -38,7 +34,12 @@ fn main() {
 }
 
 fn run() -> Result<()> {
-    let opt = parse_args(env::args().skip(1).collect())?;
+    let args: Vec<String> = env::args().skip(1).collect();
+    if args.is_empty() {
+        print_help();
+        return Ok(());
+    }
+    let opt = parse_args(args)?;
 
     if opt.stream {
         eprintln!(
@@ -79,22 +80,10 @@ fn run() -> Result<()> {
         return Ok(());
     }
 
-    let mut reasoner_options = ReasonerOptions {
+    let reasoner_options = ReasonerOptions {
         proof: opt.proof,
         ..ReasonerOptions::default()
     };
-    if let Some(value) = opt.max_iterations {
-        reasoner_options.max_iterations = value;
-    }
-    if let Some(value) = opt.max_match_steps {
-        reasoner_options.max_match_steps = value;
-    }
-    if let Some(value) = opt.max_backward_depth {
-        reasoner_options.max_backward_depth = value;
-    }
-    if let Some(value) = opt.max_backward_solutions_per_goal {
-        reasoner_options.max_backward_solutions_per_goal = value;
-    }
     let result = reason(&merged, &reasoner_options);
     if let Some(summary) = result.incomplete_summary() {
         return Err(EuleronError::new(summary));
@@ -169,7 +158,6 @@ fn run_stream_messages(opt: &CliOptions) -> Result<()> {
                 &final_url,
                 base.as_deref(),
                 &program,
-                opt,
             )?;
         } else if source == "-" {
             return Err(EuleronError::new(
@@ -182,7 +170,6 @@ fn run_stream_messages(opt: &CliOptions) -> Result<()> {
                 &source,
                 base.as_deref(),
                 &program,
-                opt,
             )?;
         }
     }
@@ -194,7 +181,6 @@ fn stream_message_reader<R: BufRead>(
     label: &str,
     base: Option<&str>,
     program: &Document,
-    opt: &CliOptions,
 ) -> Result<()> {
     let mut directives = String::new();
     let mut message = String::new();
@@ -227,7 +213,6 @@ fn stream_message_reader<R: BufRead>(
                 label,
                 message_index,
                 base,
-                opt,
             )?;
             message.clear();
             message_index += 1;
@@ -257,7 +242,6 @@ fn stream_message_reader<R: BufRead>(
             label,
             message_index,
             base,
-            opt,
         )?;
     }
     Ok(())
@@ -270,7 +254,6 @@ fn run_one_message(
     label: &str,
     index: usize,
     base: Option<&str>,
-    opt: &CliOptions,
 ) -> Result<()> {
     let replay = format!("{directives}\nVERSION \"1.2-messages\"\n{message}");
     let message_label = format!("{label}#message-{index}");
@@ -278,22 +261,10 @@ fn run_one_message(
     let parsed = parse_rdf_message_log(&replay, base)
         .map_err(|err| EuleronError::new(err.with_source_location(&replay, &message_label)))?;
     merged.merge(parsed);
-    let mut options = ReasonerOptions {
+    let options = ReasonerOptions {
         proof: false,
         ..ReasonerOptions::default()
     };
-    if let Some(value) = opt.max_iterations {
-        options.max_iterations = value;
-    }
-    if let Some(value) = opt.max_match_steps {
-        options.max_match_steps = value;
-    }
-    if let Some(value) = opt.max_backward_depth {
-        options.max_backward_depth = value;
-    }
-    if let Some(value) = opt.max_backward_solutions_per_goal {
-        options.max_backward_solutions_per_goal = value;
-    }
     let result = reason(&merged, &options);
     if let Some(summary) = result.incomplete_summary() {
         return Err(EuleronError::new(summary));
@@ -345,18 +316,6 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
                 }
                 opt.base_iri = Some(args[i].clone());
             }
-            "--max-iterations" => {
-                opt.max_iterations = Some(parse_usize_option(&args, &mut i)?);
-            }
-            "--max-match-steps" => {
-                opt.max_match_steps = Some(parse_usize_option(&args, &mut i)?);
-            }
-            "--max-backward-depth" => {
-                opt.max_backward_depth = Some(parse_usize_option(&args, &mut i)?);
-            }
-            "--max-backward-solutions" => {
-                opt.max_backward_solutions_per_goal = Some(parse_usize_option(&args, &mut i)?);
-            }
             "--store-clear" | "--enforce-https" => {
                 eprintln!(
                     "warning: {} is accepted for CLI compatibility but not implemented in Euleron",
@@ -371,23 +330,6 @@ fn parse_args(args: Vec<String>) -> Result<CliOptions> {
         i += 1;
     }
     Ok(opt)
-}
-
-fn parse_usize_option(args: &[String], index: &mut usize) -> Result<usize> {
-    let flag = args[*index].clone();
-    *index += 1;
-    let Some(value) = args.get(*index) else {
-        return Err(EuleronError::new(format!(
-            "{} requires a non-negative integer",
-            flag
-        )));
-    };
-    value.parse::<usize>().map_err(|_| {
-        EuleronError::new(format!(
-            "{} requires a non-negative integer, got {}",
-            flag, value
-        ))
-    })
 }
 
 fn rdf_format_for_source(label: &str, rdf_mode: bool) -> Result<Option<RdfFormat>> {
@@ -489,10 +431,6 @@ fn print_help() {
     println!(
         "      --base-iri IRI            Base IRI used by parser modes that resolve relative IRIs"
     );
-    println!("      --max-iterations N        Maximum outer fixpoint iterations");
-    println!("      --max-match-steps N       Maximum matcher steps per premise search");
-    println!("      --max-backward-depth N    Maximum backward-rule recursion depth");
-    println!("      --max-backward-solutions N  Maximum substitutions retained per backward goal");
     println!("  -v, --version                 Print version");
     println!("  -h, --help                    Show this help");
 }

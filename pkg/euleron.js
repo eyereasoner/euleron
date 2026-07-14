@@ -159,7 +159,7 @@ export function version() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
-        __wbg_now_108f4150e761c838: function() {
+        __wbg_now_5b655dac16835dec: function() {
             const ret = Date.now();
             return ret;
         },

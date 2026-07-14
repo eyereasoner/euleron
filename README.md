@@ -107,9 +107,12 @@ echo '@prefix : <http://example.org/> . :Socrates a :Man . { ?x a :Man . } => { 
 Show help/version:
 
 ```bash
+cargo run
 cargo run -- --help
 cargo run -- --version
 ```
+
+Running `euleron` without arguments displays the same help as `euleron -h`.
 
 `-r`/`--rdf` enables RDF/TriG input/output compatibility. RDF-compatible input is selected by file extension: Euleron recognizes `.ttl`, `.nt`, `.nq`, and `.trig`; standard input is parsed as Turtle when `--rdf` is set:
 
@@ -120,8 +123,6 @@ cargo run -- input.nq
 cargo run -- input.trig
 cargo run -- --rdf --base-iri https://example.org/base - < input.ttl
 ```
-
-The CLI exposes the reasoning limits as `--max-iterations`, `--max-match-steps`, `--max-backward-depth`, and `--max-backward-solutions`. Reaching one of these limits makes the command fail with an incomplete-reasoning diagnostic rather than printing a partial closure as if it were complete.
 
 The CLI also accepts a small set of legacy Eyereasoner flags such as `--ast`, `--proof`, `--rdf`, `--stream`, `--builtin`, `--store`, and `--store-path`. `-p`/`--proof` emits N3 proof explanations, `-r`/`--rdf` enables RDF/TriG compatibility, and `-s`/`--stream` keeps the current finite-output behavior. Flags that are not otherwise implemented by Euleron are accepted as no-ops or warnings so existing command lines fail softly during migration.
 
