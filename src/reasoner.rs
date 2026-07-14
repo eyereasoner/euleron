@@ -6,7 +6,15 @@ use crate::ast::*;
 use crate::parser::parse_n3;
 use regex::Regex;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
+
+#[cfg(target_arch = "wasm32")]
+#[wasm_bindgen::prelude::wasm_bindgen]
+extern "C" {
+    #[wasm_bindgen::prelude::wasm_bindgen(js_namespace = Date, js_name = now)]
+    fn javascript_date_now() -> f64;
+}
 
 pub type Bindings = BTreeMap<String, Term>;
 
@@ -3442,9 +3450,8 @@ fn eval_time_builtin(pred: &str, left: &Term, right: &Term, bindings: &Bindings)
         if !matches!(resolved, Term::Var(_) | Term::Blank(_)) {
             return if datetime_seconds(&resolved).is_some() { vec![bindings.clone()] } else { Vec::new() };
         }
-        let now = SystemTime::now().duration_since(UNIX_EPOCH).ok();
-        let Some(now) = now else { return Vec::new(); };
-        let value = typed_literal(format_datetime_utc(now.as_secs() as i64, now.subsec_millis()), XSD_DATE_TIME);
+        let Some((seconds, millis)) = current_unix_time() else { return Vec::new(); };
+        let value = typed_literal(format_datetime_utc(seconds, millis), XSD_DATE_TIME);
         let mut b = bindings.clone();
         return if unify_term(right, &value, &mut b) { vec![canonicalize_bindings(&b)] } else { Vec::new() };
     }
@@ -3591,6 +3598,20 @@ fn format_datetime_utc(seconds: i64, millis: u32) -> String {
     let sod = seconds.rem_euclid(86_400);
     let (year, month, day) = civil_from_days(days);
     format!("{year:04}-{month:02}-{day:02}T{:02}:{:02}:{:02}.{millis:03}+00:00", sod / 3600, sod % 3600 / 60, sod % 60)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn current_unix_time() -> Option<(i64, u32)> {
+    let now = SystemTime::now().duration_since(UNIX_EPOCH).ok()?;
+    Some((now.as_secs() as i64, now.subsec_millis()))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn current_unix_time() -> Option<(i64, u32)> {
+    let millis = javascript_date_now();
+    if !millis.is_finite() || millis < 0.0 { return None; }
+    let whole = millis.floor() as u64;
+    Some(((whole / 1000) as i64, (whole % 1000) as u32))
 }
 
 fn format_duration_seconds(seconds: f64) -> String {

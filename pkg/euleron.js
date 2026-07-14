@@ -159,6 +159,10 @@ export function version() {
 function __wbg_get_imports() {
     const import0 = {
         __proto__: null,
+        __wbg_now_108f4150e761c838: function() {
+            const ret = Date.now();
+            return ret;
+        },
         __wbindgen_cast_0000000000000001: function(arg0, arg1) {
             // Cast intrinsic for `Ref(String) -> Externref`.
             const ret = getStringFromWasm0(arg0, arg1);
