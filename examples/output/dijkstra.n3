@@ -1,0 +1,18 @@
+@prefix : <https://eyereasoner.github.io/ns#> .
+
+(:b :a) :edge 4 .
+(:c :a) :edge 2 .
+(:c :b) :edge 1 .
+(:d :b) :edge 5 .
+(:d :c) :edge 8 .
+(:e :c) :edge 10 .
+(:e :d) :edge 2 .
+(:f :d) :edge 6 .
+(:f :e) :edge 3 .
+(:a :f) :path ((:a :c :b :d :e :f) 13) .
+(:a :f) :path ((:a :c :b :d :f) 14) .
+(:a :f) :path ((:a :b :d :e :f) 14) .
+(:a :f) :path ((:a :b :d :f) 15) .
+(:a :f) :path ((:a :c :e :f) 15) .
+(:a :f) :path ((:a :c :d :e :f) 15) .
+(:a :f) :path ((:a :c :d :f) 16) .

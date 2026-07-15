@@ -231,7 +231,6 @@ fn rewrite_message_blank_labels(message: &str, message_index: usize) -> String {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ParserProfile {
     syntax: SyntaxProfile,
-    emit_native_list_triples: bool,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -241,10 +240,10 @@ enum SyntaxProfile {
 }
 
 impl ParserProfile {
-    fn n3() -> Self { Self { syntax: SyntaxProfile::N3, emit_native_list_triples: true } }
+    fn n3() -> Self { Self { syntax: SyntaxProfile::N3 } }
 
     fn rdf12(format: RdfFormat) -> Self {
-        Self { syntax: SyntaxProfile::Rdf12(format), emit_native_list_triples: false }
+        Self { syntax: SyntaxProfile::Rdf12(format) }
     }
 
     fn rdf_format(&self) -> Option<RdfFormat> {
@@ -1071,13 +1070,7 @@ impl Parser {
             triples.append(&mut generated);
         }
         self.expect(TokenKind::RParen)?;
-        let list_term = Term::list(items.clone());
-        if self.profile.emit_native_list_triples && !items.is_empty() {
-            triples.push(Triple::new(list_term.clone(), Term::iri(RDF_FIRST), items[0].clone()));
-            let rest = if items.len() == 1 { Term::iri(RDF_NIL) } else { Term::list(items[1..].to_vec()) };
-            triples.push(Triple::new(list_term.clone(), Term::iri(RDF_REST), rest));
-        }
-        Ok((list_term, triples))
+        Ok((Term::list(items), triples))
     }
 
     fn parse_pname_or_path(&mut self, pname: &str, offset: usize) -> Result<(Term, Vec<Triple>)> {

@@ -24,6 +24,23 @@ fn assert_golden_non_prefix_lines(name: &str, source: &str, golden: &str) {
     check_golden_non_prefix_lines(name, source, golden).unwrap_or_else(|msg| panic!("{}", msg));
 }
 
+#[test]
+fn n3_lists_remain_first_class_in_rule_conclusions() {
+    let source = r#"
+        @prefix : <http://example.org/>.
+        { :input :value ?Value. } => { (:result ?Value) :contains (:answer ?Value). }.
+        :input :value 42.
+    "#;
+
+    let doc = parse_n3(source, None).unwrap();
+    let result = reason_document(&doc, &ReasonerOptions::default());
+    let output = result_to_string(&doc.prefixes, &result.derived);
+
+    assert!(output.contains("(:result 42) :contains (:answer 42)"), "{output}");
+    assert!(!output.contains("rdf:first"), "{output}");
+    assert!(!output.contains("rdf:rest"), "{output}");
+}
+
 fn stable_golden_lines(golden: &str) -> impl Iterator<Item = &str> {
     golden.lines().map(str::trim).filter(|line| {
         !line.is_empty()
