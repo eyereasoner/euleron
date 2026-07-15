@@ -1,6 +1,6 @@
 # Eyeron Source Code Guide
 
-This guide explains Eyeron for a computer science student who knows basic Rust but may be new to RDF, Notation3, or rule engines. It focuses on the program's structure and algorithms. For installation and command examples, see [`README.md`](README.md).
+This guide explains Eyeron for a computer science student who knows basic Rust but may be new to RDF, Notation3, or rule engines. It focuses on the program's structure and algorithms. For installation and command examples, see [`README.md`](README.md), or [try Eyeron in the browser](https://eyereasoner.github.io/eyeron/playground) while following along.
 
 ## 1. What the program does
 

@@ -4,6 +4,9 @@
 
 Eyeron is a Rust-based Notation3 (N3) reasoner that turns facts and rules into conclusions with verifiable proofs. It can be used as a command-line program, embedded as a Rust library, or run in a browser through WebAssembly.
 
+> [!TIP]
+> **Start here:** [Learn how Eyeron's source code works](SOURCE_CODE_GUIDE.md), or [try Eyeron now in the browser](https://eyereasoner.github.io/eyeron/playground).
+
 ## Highlights
 
 - forward rules with `log:implies` / `=>`;
