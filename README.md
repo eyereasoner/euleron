@@ -143,6 +143,14 @@ cargo test --release
 
 The suite covers parser and built-in unit tests, CLI behavior, regressions, example outputs, proof goldens, the bundled Notation3 conformance suite, and the local W3C RDF 1.1/1.2 manifest mirror.
 
+Run the focused regression, packaged-example, or playground checks independently with:
+
+```bash
+cargo test --release --test regressions
+cargo test --release --test examples
+cargo test --release --test playground
+```
+
 Refresh both vendored upstream test suites with:
 
 ```bash

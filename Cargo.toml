@@ -1,6 +1,6 @@
 [package]
 name = "eyeron"
-version = "0.3.17"
+version = "0.3.18"
 edition = "2021"
 default-run = "eyeron"
 authors = ["Jos De Roo"]
@@ -26,6 +26,11 @@ test = false
 [[test]]
 name = "w3c_rdf"
 path = "tests/w3c_rdf.rs"
+harness = false
+
+[[test]]
+name = "examples"
+path = "tests/examples.rs"
 harness = false
 
 [dependencies]
