@@ -1,0 +1,20 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+repo_root=$(git rev-parse --show-toplevel)
+tmp_dir=$(mktemp -d)
+trap 'rm -rf "$tmp_dir"' EXIT
+
+echo "Syncing notation3tests from Codeberg..."
+git clone --depth 1 --quiet \
+  https://codeberg.org/phochste/notation3tests.git \
+  "$tmp_dir/notation3tests"
+rsync -a --delete \
+  "$tmp_dir/notation3tests/tests/" \
+  "$repo_root/tests/notation3tests/tests/"
+
+echo "Refreshing W3C RDF 1.x manifests from GitHub..."
+cd "$repo_root"
+EYERON_W3C_RDF_REFRESH=1 cargo test --release --test w3c_rdf
+
+echo "Test suites are up to date."

@@ -140,6 +140,14 @@ cargo test --release
 
 The suite covers parser and built-in unit tests, CLI behavior, regressions, example outputs, proof goldens, the bundled Notation3 conformance suite, and the local W3C RDF 1.1/1.2 manifest mirror.
 
+Refresh both vendored upstream test suites with:
+
+```bash
+./scripts/sync-test-suites
+```
+
+This synchronizes `notation3tests` from Codeberg, refreshes the W3C RDF 1.x manifests from GitHub, and runs the RDF manifest checks with `--release`.
+
 Run only the W3C RDF sweep with:
 
 ```bash
