@@ -173,7 +173,9 @@ Internally, `Parser` owns the token vector, a current position, the `Document` u
 
 `parse_document` repeatedly examines the next token and dispatches to a more specific method. Prefix and base declarations update parser state. Ordinary statements become facts. Formula implications such as `{ ... } => { ... }` become `Rule` values.
 
-Some compact RDF syntax expands into multiple triples. For example, semicolons reuse a subject and lists may create structural triples in RDF-compatible modes. This is why several parsing functions return both a term and a vector of generated triples.
+Some compact syntax expands into multiple triples. For example, a blank-node property list such as `[ :name "Ada" ]` introduces a generated blank node and a triple about it. This is why several parsing functions return both a term and a vector of generated triples.
+
+Parenthesized lists are different: they remain first-class `Term::List` values. The parser does not lower an N3 list into derived `rdf:first` and `rdf:rest` triples. Keeping the native representation avoids polluting rule conclusions and the fact closure with structural bookkeeping. Rules that explicitly use `rdf:first`, `rdf:rest`, or the corresponding `list:` built-ins can still inspect a native list through the reasoner's virtual list matching.
 
 RDF Message Logs are split at message boundaries. Each payload is parsed and represented using message-envelope vocabulary and quoted formulas, allowing rules to inspect a message as one atomic graph.
 
@@ -217,6 +219,8 @@ When some pattern positions are already ground, `candidates` selects a much smal
 - formulas are unified as unordered collections of triples;
 - concrete terms must be semantically equal.
 
+Native lists also behave like RDF collections when a rule explicitly asks for `rdf:first` or `rdf:rest`. This behavior is virtual: the matcher computes the first item or remaining list from `Term::List` without materializing extra facts. List built-ins preserve concrete graph blank nodes and implement operations such as membership, append, reverse, and lexicographic sort directly over the native items. Numeric literals sort by numeric value rather than by their lexical spelling.
+
 `unify_term` is more general because either side may contain a variable. It also performs an **occurs check** before creating a binding, avoiding cyclic substitutions such as `?x = (?x)`.
 
 For multiple premises, `match_premise_remaining` is a recursive backtracking search. It does not blindly use source order. It prefers a runnable, selective premise with few candidates. This resembles join ordering in a relational database: applying a selective condition early avoids creating many intermediate bindings.
@@ -234,13 +238,16 @@ repeat:
     evaluate other forward rules with general matching
     instantiate conclusions and insert unseen facts
     if a conclusion creates a new rule, register it
-until no unseen fact was added
+    after ordinary closure saturation, evaluate deferred scoped built-ins
+until neither ordinary nor deferred evaluation adds an unseen fact
 
 evaluate query rules against the completed closure
 return explicit facts, derived facts, closure, proofs, and statistics
 ```
 
 A `HashSet<Triple>` named `seen` prevents duplicate facts and is also the fixpoint signal. `emit_conclusions` substitutes a successful binding into each rule conclusion. Blank nodes in a conclusion are created deterministically for that firing. `insert_materialized_triple` updates the closure, index, derived output, and optional proof record together.
+
+Scoped built-ins whose answers depend on the completed current graph need an additional phase. Rules containing `log:collectAllIn`, `log:forAllIn`, or `log:notIncludes` are deferred until ordinary forward reasoning reaches closure saturation. If a deferred rule derives new facts, ordinary reasoning resumes before scoped built-ins are evaluated again. This prevents a temporary, incomplete closure from producing an aggregate or negative conclusion that cannot later be retracted.
 
 ### Agenda optimization
 
@@ -361,6 +368,10 @@ cargo test --release --test regressions
 ```
 
 Unit tests live beside implementation code, while `tests/` contains black-box and conformance tests. The examples have expected results in `examples/output/` and expected explanations in `examples/proof/`, which makes them especially useful when learning or changing behavior.
+
+For N3 example outputs, the test harness parses both the reasoner output and its golden and requires complete graph isomorphism. Triple order and blank-node labels may differ, but missing or additional triples fail the test. Markdown report goldens use content-line checks because they are presentation text rather than N3 graphs.
+
+The W3C RDF runner likewise compares complete RDF datasets by isomorphism, including named graphs, lists lowered for RDF comparison, RDF-star triple terms, and blank-node renaming. The vendored Notation3tests suite has a different upstream oracle: each N3 program derives standardized pass/fail test facts. Its runner requires the expected outcome, rejects false or missing results, distinguishes expected crash cases, and reports unsupported cases separately; those tests do not ship separate output graphs to compare isomorphically.
 
 ## 14. Suggested study exercises
 
