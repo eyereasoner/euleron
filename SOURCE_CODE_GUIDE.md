@@ -348,16 +348,16 @@ Useful focused commands include:
 
 ```bash
 # See the parsed representation without reasoning
-cargo run -- --ast examples/socrates.n3
+cargo run --release -- --ast examples/socrates.n3
 
 # Run a small forward-rule example
-cargo run -- examples/socrates.n3
+cargo run --release -- examples/socrates.n3
 
 # Include derivation explanations
-cargo run -- --proof examples/socrates.n3
+cargo run --release -- --proof examples/socrates.n3
 
 # Run one integration-test target
-cargo test --test regressions
+cargo test --release --test regressions
 ```
 
 Unit tests live beside implementation code, while `tests/` contains black-box and conformance tests. The examples have expected results in `examples/output/` and expected explanations in `examples/proof/`, which makes them especially useful when learning or changing behavior.
