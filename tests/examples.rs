@@ -193,6 +193,7 @@ fn run_golden_case(root: &Path, name: String, source_path: PathBuf, golden_path:
     let input_path = root.join("examples/input").join(format!("{name}.trig"));
     let input = input_path.exists().then(|| read(&input_path));
     let golden = read(&golden_path);
+    let golden_is_n3 = golden_path.extension().and_then(|ext| ext.to_str()) == Some("n3");
 
     let (tx, rx) = std::sync::mpsc::channel();
     let thread_name = name.clone();
@@ -201,7 +202,7 @@ fn run_golden_case(root: &Path, name: String, source_path: PathBuf, golden_path:
         if let Some(input) = input.as_ref() {
             sources.push(("input", input.as_str()));
         }
-        let _ = tx.send(check_golden_documents(&thread_name, sources, &golden));
+        let _ = tx.send(check_golden_documents(&thread_name, sources, &golden, golden_is_n3));
     });
 
     let timeout = if name.starts_with("deep-taxonomy-")

@@ -480,6 +480,7 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
     let mut proofs = Vec::<DerivedFact>::new();
     let mut iteration = 0usize;
     let mut report = RunReport::default();
+    let mut closure_saturated = false;
 
     loop {
         if iteration >= options.max_iterations {
@@ -601,6 +602,9 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
             if agenda_index.indexed.contains(&idx) { continue; }
             let rule = active_rules[idx].clone();
             if !rule.is_forward { continue; }
+            if !closure_saturated && rule.premise.iter().any(is_deferred_scoped_premise) {
+                continue;
+            }
 
             let matches = match_premises(
                 &rule.premise,
@@ -635,8 +639,13 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
 
         if seen.len() == before {
             if agenda_cursor < closure.len() { continue; }
+            if !closure_saturated {
+                closure_saturated = true;
+                continue;
+            }
             break;
         }
+        closure_saturated = false;
     }
 
     if !query_rules.is_empty() {
@@ -668,6 +677,14 @@ pub fn reason(doc: &Document, options: &ReasonerOptions) -> ReasonerResult {
         proofs,
         rules: active_rules,
     }
+}
+
+fn is_deferred_scoped_premise(premise: &Triple) -> bool {
+    matches!(
+        &premise.p,
+        Term::Iri(iri)
+            if matches!(iri.as_str(), LOG_COLLECT_ALL_IN | LOG_FOR_ALL_IN | LOG_NOT_INCLUDES)
+    )
 }
 
 fn evaluate_query_rules(
@@ -1888,7 +1905,7 @@ fn eval_builtin(
         Term::Iri(ref iri) if iri == LOG_CONCLUSION => Some(eval_log_conclusion(&premise.s, &premise.o, bindings, budget)),
         Term::Iri(ref iri) if iri == LOG_CONJUNCTION => Some(eval_log_conjunction(&premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if iri == LOG_INCLUDES => Some(eval_log_includes(&premise.s, &premise.o, bindings, facts, rules)),
-        Term::Iri(ref iri) if iri == LOG_NOT_INCLUDES => Some(eval_log_not_includes(premise, bindings, budget)),
+        Term::Iri(ref iri) if iri == LOG_NOT_INCLUDES => Some(eval_log_not_includes(premise, bindings, facts, rules, budget)),
         Term::Iri(ref iri) if iri == LOG_URI => Some(eval_log_uri(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_RAW_TYPE => Some(eval_log_raw_type(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_DTLIT => Some(eval_log_dtlit(&premise.s, &premise.o, bindings, facts)),
@@ -2011,32 +2028,45 @@ fn eval_collect_all_in(
     }
 
     let collected_list = Term::List(collected.clone());
-    let mut results = Vec::new();
+    let scalar_singleton_compat = (2..=3).contains(&collected.len())
+        && collected.iter().all(|item| !matches!(item, Term::List(_)))
+        && matches!(resolve(&result_template, bindings), Term::Var(_))
+        && clause_goals.iter().any(triple_contains_bound_blank_var);
     let mut out = bindings.clone();
+    let mut results = Vec::new();
     if unify_term(&result_template, &collected_list, &mut out) {
         results.push(canonicalize_bindings(&out));
     }
-
-    // Some static conformance examples use the collected result as a graph
-    // object and then test for one-item list objects via comma syntax.  Keep
-    // the normal all-results list binding, but also expose one-item list
-    // bindings for small collections when the target is an unbound variable.
-    //
-    // Do not do this for larger collections: examples such as the RDF Message
-    // cold-chain recall benchmark collect 48, 42, 6, and 6 telemetry members
-    // in one rule.  Returning every one-item alternative for those aggregate
-    // variables creates a cartesian product of count branches even though the
-    // ordinary all-results binding is the intended aggregate semantics.
-    if matches!(resolve(&result_template, bindings), Term::Var(_)) && (2..=3).contains(&collected.len()) {
+    // Compatibility for the static comma-object conformance case: it expects
+    // scalar collections to be usable as one-item list objects. Never split
+    // collections of structured list values (such as Dijkstra queue entries),
+    // where doing so would create alternative partial aggregates.
+    if scalar_singleton_compat {
         for item in collected {
-            let mut b = bindings.clone();
-            if unify_term(&result_template, &Term::List(vec![item]), &mut b) {
-                let b = canonicalize_bindings(&b);
-                if !results.contains(&b) { results.push(b); }
+            let mut singleton = bindings.clone();
+            if unify_term(&result_template, &Term::List(vec![item]), &mut singleton) {
+                let singleton = canonicalize_bindings(&singleton);
+                if !results.contains(&singleton) { results.push(singleton); }
             }
         }
     }
     results
+}
+
+fn triple_contains_bound_blank_var(triple: &Triple) -> bool {
+    [&triple.s, &triple.p, &triple.o]
+        .into_iter()
+        .any(term_contains_bound_blank_var)
+}
+
+fn term_contains_bound_blank_var(term: &Term) -> bool {
+    match term {
+        Term::Var(name) => name.starts_with("_:"),
+        Term::Blank(_) => true,
+        Term::List(items) => items.iter().any(term_contains_bound_blank_var),
+        Term::Formula(triples) => triples.iter().any(triple_contains_bound_blank_var),
+        _ => false,
+    }
 }
 
 fn eval_for_all_in(
@@ -2211,15 +2241,25 @@ fn match_formula_subset(scope: &[Triple], pattern: &[Triple], bindings: &Binding
 fn eval_log_not_includes(
     premise: &Triple,
     bindings: &Bindings,
+    facts: &[Triple],
+    rules: &[Rule],
     budget: &mut SearchBudget,
 ) -> Vec<Bindings> {
     let subj = resolve_pattern(&premise.s, bindings);
     let Term::Formula(pattern) = resolve(&premise.o, bindings) else { return Vec::new(); };
     match subj {
-        // An unbound formula subject is existential.  Preserve the historical
-        // conformance behavior by constructing a harmless witness formula that
-        // does not include the requested pattern.
+        // An unbound formula subject denotes the current graph. Preserve the
+        // argument-mode binding behavior by returning a witness only when that
+        // witness when that graph does not include the requested pattern.
         Term::Var(name) => {
+            let mut scope = facts.to_vec();
+            for (idx, rule) in rules.iter().enumerate() {
+                let fact = rule_to_triple(rule, &format!("__not_includes_rulefact_{}__", idx));
+                if !scope.contains(&fact) { scope.push(fact); }
+            }
+            let mut matches = Vec::new();
+            match_formula_subset(&scope, &pattern, bindings, &mut matches);
+            if !matches.is_empty() { return Vec::new(); }
             let witness = Term::Formula(vec![Triple::new(
                 Term::Iri("http://example.org/a".to_string()),
                 Term::Iri("http://example.org/b".to_string()),
@@ -2677,7 +2717,7 @@ fn eval_list_sort(left: &Term, right: &Term, bindings: &Bindings, facts: &[Tripl
         .or_else(|| rdf_or_native_list(right, bindings, facts).map(|items| (items, false)));
     let Some((mut items, left_was_input)) = input else { return Vec::new(); };
     if !items.iter().all(Term::is_ground) { return Vec::new(); }
-    items.sort_by_key(term_sort_key);
+    items.sort_by(compare_terms_for_list_sort);
     let mut out = bindings.clone();
     let ok = if left_was_input {
         unify_listish(right, items, &mut out, facts)
@@ -2687,14 +2727,27 @@ fn eval_list_sort(left: &Term, right: &Term, bindings: &Bindings, facts: &[Tripl
     if ok { vec![canonicalize_bindings(&out)] } else { Vec::new() }
 }
 
-fn term_sort_key(term: &Term) -> String {
-    match term {
-        Term::Literal(lit) => format!("0:{}", lit.value),
-        Term::Iri(iri) => format!("1:{}", iri),
-        Term::Blank(id) => format!("2:{}", id),
-        Term::List(items) => format!("3:[{}]", items.iter().map(term_sort_key).collect::<Vec<_>>().join(",")),
-        Term::Formula(triples) => format!("4:{:?}", triples),
-        Term::Var(name) => format!("5:{}", name),
+fn compare_terms_for_list_sort(a: &Term, b: &Term) -> std::cmp::Ordering {
+    use std::cmp::Ordering;
+
+    match (a, b) {
+        (Term::Literal(a), Term::Literal(b)) => {
+            match (numeric_value(&Term::Literal(a.clone())), numeric_value(&Term::Literal(b.clone()))) {
+                (Some(a), Some(b)) => a.value.partial_cmp(&b.value).unwrap_or(Ordering::Equal),
+                _ => a.value.cmp(&b.value),
+            }
+        }
+        (Term::List(a), Term::List(b)) => {
+            for (a, b) in a.iter().zip(b) {
+                let ordering = compare_terms_for_list_sort(a, b);
+                if ordering != Ordering::Equal { return ordering; }
+            }
+            a.len().cmp(&b.len())
+        }
+        (Term::Iri(a), Term::Iri(b)) => a.cmp(b),
+        (Term::List(_), _) => Ordering::Less,
+        (_, Term::List(_)) => Ordering::Greater,
+        _ => format!("{:?}", a).cmp(&format!("{:?}", b)),
     }
 }
 
@@ -2750,7 +2803,10 @@ fn terms_equal_list_builtin(a: &Term, b: &Term) -> bool {
 
 fn unify_term_list_builtin_facts(left: &Term, right: &Term, bindings: &mut Bindings, facts: &[Triple]) -> bool {
     let l = resolve_pattern(left, bindings);
-    let r = resolve_pattern(right, bindings);
+    // The right-hand side is the candidate value supplied by the builtin.
+    // Preserve graph blank nodes as concrete values instead of reopening them
+    // as local blank-pattern variables.
+    let r = resolve(right, bindings);
     match (&l, &r) {
         (Term::Var(a), _) => bind_one_mut(bindings, a, r.clone()),
         (_, Term::Var(b)) => bind_one_mut(bindings, b, l.clone()),

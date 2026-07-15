@@ -1,6 +1,6 @@
 [package]
 name = "eyeron"
-version = "0.3.19"
+version = "0.3.20"
 edition = "2021"
 default-run = "eyeron"
 authors = ["Jos De Roo"]
