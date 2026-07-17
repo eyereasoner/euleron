@@ -657,3 +657,69 @@ fn unknown_predicate_in_builtin_namespace_remains_an_ordinary_predicate() {
     assert!(result.is_complete(), "{:?}", result.errors);
     assert!(result.derived.is_empty());
 }
+
+#[test]
+fn eyeling_datatype_inspection_builtins_drive_generated_rules() {
+    let source = r#"
+        @prefix : <http://example.org/> .
+        @prefix cdt: <https://w3id.org/cdt/> .
+        @prefix dt: <https://eyereasoner.github.io/eyeling/datatype#> .
+
+        :measurement :speed "36 local-km/h"^^cdt:speed .
+        {
+            ?measurement :speed ?literal .
+            ?literal dt:datatype ?datatype .
+            ?literal dt:lexicalForm ?lexical .
+        } => {
+            ?literal :inspectedAs (?datatype ?lexical) .
+        } .
+    "#;
+
+    let output = reason(source).unwrap();
+    assert!(
+        output.contains("\"36 local-km/h\"^^cdt:speed :inspectedAs (cdt:speed \"36 local-km/h\")"),
+        "{output}"
+    );
+}
+
+#[test]
+fn blank_scope_log_not_includes_guards_generated_rules() {
+    let source = r#"
+        @prefix : <http://example.org/> .
+        @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+
+        :input :value :ordinary .
+        :blocked :guard true .
+        {
+            ?subject :value ?value .
+            _:scope log:notIncludes { ?subject :guard true } .
+        } => {
+            ?subject :accepted ?value .
+        } .
+        :blocked :value :must-not-pass .
+    "#;
+
+    let output = reason(source).unwrap();
+    assert!(output.contains(":input :accepted :ordinary"), "{output}");
+    assert!(!output.contains(":blocked :accepted"), "{output}");
+}
+
+#[test]
+fn blank_scope_log_not_includes_uses_existing_outer_bindings() {
+    let source = r#"
+        @prefix : <http://example.org/> .
+        @prefix log: <http://www.w3.org/2000/10/swap/log#> .
+
+        :output :isGenerated true .
+        :input :value :first .
+        {
+            ?subject ?property ?value .
+            _:scope log:notIncludes { ?property :isGenerated true } .
+        } => {
+            ?subject :acceptedProperty ?property .
+        } .
+    "#;
+
+    let output = reason(source).unwrap();
+    assert!(!output.contains(":acceptedProperty :output"), "{output}");
+}

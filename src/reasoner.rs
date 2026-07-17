@@ -938,6 +938,7 @@ fn is_builtin_iri(iri: &str) -> bool {
         | LOG_CONCLUSION | LOG_CONJUNCTION | LOG_INCLUDES | LOG_NOT_INCLUDES | LOG_URI
         | LOG_RAW_TYPE | LOG_DTLIT | LOG_LANGLIT | LOG_CONTENT | LOG_SEMANTICS
         | LOG_SEMANTICS_OR_ERROR | LOG_PARSED_AS_N3 | LOG_SKOLEM | CRYPTO_SHA
+        | DT_DATATYPE | DT_LEXICAL_FORM | EYELING_DT_DATATYPE | EYELING_DT_LEXICAL_FORM
         | RDF_FIRST | RDF_REST | LIST_FIRST | LIST_REST
         | LIST_APPEND | LIST_ITERATE | LIST_MAP | LIST_FIRST_REST | LIST_REVERSE
         | LIST_SORT | LIST_NOT_MEMBER
@@ -953,6 +954,7 @@ fn is_agenda_safe_builtin_iri(iri: &str) -> bool {
     matches!(iri,
         LOG_EQUAL_TO | LOG_NOT_EQUAL_TO | LOG_URI | LOG_RAW_TYPE | LOG_DTLIT
         | LOG_LANGLIT | LOG_CONTENT | LOG_SKOLEM | CRYPTO_SHA
+        | DT_DATATYPE | DT_LEXICAL_FORM | EYELING_DT_DATATYPE | EYELING_DT_LEXICAL_FORM
         | MATH_SUM | MATH_DIFFERENCE
     ) || is_math_operator(iri) || is_math_comparison(iri)
         || is_string_builtin(iri) || is_time_builtin(iri)
@@ -1230,7 +1232,9 @@ fn premise_is_speculative_builtin(premise: &Triple, bindings: &Bindings) -> bool
     if is_math_comparison(&iri) {
         return term_has_unresolved_var(&left) || term_has_unresolved_var(&right);
     }
-    if matches!(iri.as_str(), LOG_DTLIT | LOG_LANGLIT | LOG_URI) {
+    if matches!(iri.as_str(), LOG_DTLIT | LOG_LANGLIT | LOG_URI
+        | DT_DATATYPE | DT_LEXICAL_FORM | EYELING_DT_DATATYPE | EYELING_DT_LEXICAL_FORM)
+    {
         return term_has_unresolved_var(&left) && term_has_unresolved_var(&right);
     }
     false
@@ -1915,6 +1919,12 @@ fn eval_builtin(
         Term::Iri(ref iri) if iri == LOG_SEMANTICS_OR_ERROR => Some(eval_log_semantics_or_error(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_PARSED_AS_N3 => Some(eval_log_parsed_as_n3(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == LOG_SKOLEM => Some(eval_log_skolem(&premise.s, &premise.o, bindings)),
+        Term::Iri(ref iri) if matches!(iri.as_str(), DT_DATATYPE | EYELING_DT_DATATYPE) => {
+            Some(eval_datatype_inspection(&premise.s, &premise.o, bindings, true))
+        }
+        Term::Iri(ref iri) if matches!(iri.as_str(), DT_LEXICAL_FORM | EYELING_DT_LEXICAL_FORM) => {
+            Some(eval_datatype_inspection(&premise.s, &premise.o, bindings, false))
+        }
         Term::Iri(ref iri) if iri == CRYPTO_SHA => Some(eval_crypto_sha(&premise.s, &premise.o, bindings)),
         Term::Iri(ref iri) if iri == RDF_FIRST || iri == LIST_FIRST => Some(eval_rdf_first(&premise.s, &premise.o, bindings, facts)),
         Term::Iri(ref iri) if iri == RDF_REST || iri == LIST_REST => Some(eval_rdf_rest(&premise.s, &premise.o, bindings, facts)),
@@ -2247,6 +2257,21 @@ fn eval_log_not_includes(
 ) -> Vec<Bindings> {
     let subj = resolve_pattern(&premise.s, bindings);
     let Term::Formula(pattern) = resolve(&premise.o, bindings) else { return Vec::new(); };
+    // A syntactic blank scope denotes the current graph.  Do not route it
+    // through the unbound-variable branch: resolve_pattern represents body
+    // blanks as variables, and that branch deliberately binds a witness.  A
+    // witness would make later notIncludes guards with the same blank inspect
+    // the dummy formula instead of the current graph.
+    if matches!(premise.s, Term::Blank(_)) {
+        let mut scope = facts.to_vec();
+        for (idx, rule) in rules.iter().enumerate() {
+            let fact = rule_to_triple(rule, &format!("__not_includes_rulefact_{}__", idx));
+            if !scope.contains(&fact) { scope.push(fact); }
+        }
+        let mut matches = Vec::new();
+        match_formula_subset(&scope, &pattern, bindings, &mut matches);
+        return if matches.is_empty() { vec![bindings.clone()] } else { Vec::new() };
+    }
     match subj {
         // An unbound formula subject denotes the current graph. Preserve the
         // argument-mode binding behavior by returning a witness only when that
@@ -2272,7 +2297,16 @@ fn eval_log_not_includes(
                 Vec::new()
             }
         }
-        Term::Blank(_) => vec![bindings.clone()],
+        Term::Blank(_) => {
+            let mut scope = facts.to_vec();
+            for (idx, rule) in rules.iter().enumerate() {
+                let fact = rule_to_triple(rule, &format!("__not_includes_rulefact_{}__", idx));
+                if !scope.contains(&fact) { scope.push(fact); }
+            }
+            let mut matches = Vec::new();
+            match_formula_subset(&scope, &pattern, bindings, &mut matches);
+            if matches.is_empty() { vec![bindings.clone()] } else { Vec::new() }
+        }
         Term::Formula(scope) => {
             let mut solutions = Vec::new();
             let empty_rules: Vec<Rule> = Vec::new();
@@ -2327,6 +2361,31 @@ fn eval_log_raw_type(subject: &Term, object: &Term, bindings: &Bindings) -> Vec<
     let value = Term::Iri(iri.to_string());
     let mut b = bindings.clone();
     if unify_term(object, &value, &mut b) { vec![canonicalize_bindings(&b)] } else { Vec::new() }
+}
+
+fn eval_datatype_inspection(
+    subject: &Term,
+    object: &Term,
+    bindings: &Bindings,
+    datatype: bool,
+) -> Vec<Bindings> {
+    let Term::Literal(lit) = resolve_pattern(subject, bindings) else { return Vec::new(); };
+    let value = if datatype {
+        let iri = if lit.language.is_some() {
+            RDF_LANG_STRING_IRI.to_string()
+        } else {
+            lit.datatype.unwrap_or_else(|| XSD_STRING_IRI.to_string())
+        };
+        Term::Iri(iri)
+    } else {
+        Term::Literal(Literal::plain(lit.value))
+    };
+    let mut next = bindings.clone();
+    if unify_term(object, &value, &mut next) {
+        vec![canonicalize_bindings(&next)]
+    } else {
+        Vec::new()
+    }
 }
 
 const LOG_FORMULA_IRI: &str = "http://www.w3.org/2000/10/swap/log#Formula";
