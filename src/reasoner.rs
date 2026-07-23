@@ -5,6 +5,7 @@
 use crate::ast::*;
 use crate::parser::parse_n3;
 use regex::Regex;
+use std::cell::RefCell;
 use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 #[cfg(not(target_arch = "wasm32"))]
 use std::time::{SystemTime, UNIX_EPOCH};
@@ -211,10 +212,15 @@ struct FactIndex {
     by_p: BTreeMap<Term, Vec<usize>>,
     by_sp: BTreeMap<(Term, Term), Vec<usize>>,
     by_po: BTreeMap<(Term, Term), Vec<usize>>,
+    // Partial native-list patterns are indexed only after a lookup shape is
+    // actually requested.  The outer key is (predicate, list length, bound
+    // positions); the inner key contains the values at those positions.
+    deep_list_s: RefCell<HashMap<(Term, usize, Vec<usize>), HashMap<Vec<Term>, Vec<usize>>>>,
 }
 
 impl FactIndex {
     fn insert(&mut self, idx: usize, triple: &Triple) {
+        self.deep_list_s.get_mut().clear();
         self.by_p.entry(triple.p.clone()).or_default().push(idx);
         self.by_sp.entry((triple.s.clone(), triple.p.clone())).or_default().push(idx);
         self.by_po.entry((triple.p.clone(), triple.o.clone())).or_default().push(idx);
@@ -227,6 +233,20 @@ impl FactIndex {
         let sg = s.is_ground();
         let pg = p.is_ground();
         let og = o.is_ground();
+
+        if pg && !sg {
+            if let Some(deep_indices) = self.deep_list_subject_candidates(facts, &p, &s) {
+                let indices = if og {
+                    match self.by_po.get(&(p.clone(), o.clone())) {
+                        Some(po_indices) if po_indices.len() < deep_indices.len() => po_indices.clone(),
+                        _ => deep_indices,
+                    }
+                } else {
+                    deep_indices
+                };
+                return indices.into_iter().map(|idx| &facts[idx]).collect();
+            }
+        }
 
         let indices = if pg && og {
             self.by_po.get(&(p.clone(), o.clone()))
@@ -246,6 +266,44 @@ impl FactIndex {
             None if pg => Vec::new(),
             None => facts.iter().collect(),
         }
+    }
+
+    fn deep_list_subject_candidates(&self, facts: &[Triple], predicate: &Term, subject: &Term) -> Option<Vec<usize>> {
+        let Term::List(pattern_items) = subject else { return None; };
+        if pattern_items.is_empty() { return None; }
+
+        let mut positions = Vec::<usize>::new();
+        let mut values = Vec::<Term>::new();
+        for (position, item) in pattern_items.iter().enumerate() {
+            if item.is_ground() {
+                positions.push(position);
+                values.push(item.clone());
+            }
+        }
+        if positions.is_empty() { return None; }
+
+        let shape = (predicate.clone(), pattern_items.len(), positions.clone());
+        if !self.deep_list_s.borrow().contains_key(&shape) {
+            let mut index = HashMap::<Vec<Term>, Vec<usize>>::new();
+            if let Some(predicate_indices) = self.by_p.get(predicate) {
+                for fact_index in predicate_indices {
+                    let Term::List(fact_items) = &facts[*fact_index].s else { continue; };
+                    if fact_items.len() != pattern_items.len() || !fact_items.iter().all(Term::is_ground) { continue; }
+                    let key = positions.iter().map(|position| fact_items[*position].clone()).collect();
+                    index.entry(key).or_default().push(*fact_index);
+                }
+            }
+            self.deep_list_s.borrow_mut().insert(shape.clone(), index);
+        }
+
+        Some(
+            self.deep_list_s
+                .borrow()
+                .get(&shape)
+                .and_then(|index| index.get(&values))
+                .cloned()
+                .unwrap_or_default(),
+        )
     }
 }
 
@@ -1523,8 +1581,9 @@ fn solve_backward_goal(
             let mut b = bindings.clone();
             if unify_triple(&goal, head, &mut b) {
                 let mut body_matches = Vec::new();
+                let remaining = (0..renamed.premise.len()).collect();
                 match_backward_premises_ordered(
-                    renamed.premise.clone(), facts, fact_index, rules, b,
+                    &renamed.premise, remaining, facts, fact_index, rules, b,
                     depth + 1, backward_stack, budget, &mut body_matches,
                 );
                 out.extend(body_matches.into_iter().map(|m| canonicalize_bindings(&m)));
@@ -1567,7 +1626,8 @@ fn solve_backward_goal(
 }
 
 fn match_backward_premises_ordered(
-    premises: Vec<Triple>,
+    premises: &[Triple],
+    remaining: Vec<usize>,
     facts: &[Triple],
     fact_index: Option<&FactIndex>,
     rules: &[Rule],
@@ -1578,14 +1638,9 @@ fn match_backward_premises_ordered(
     out: &mut Vec<Bindings>,
 ) {
     if !budget.tick() { return; }
-    if premises.is_empty() {
+    if remaining.is_empty() {
         out.push(canonicalize_bindings(&bindings));
         return;
-    }
-    for premise in &premises {
-        if premise_is_definitively_false(premise, facts, fact_index, rules, &bindings) {
-            return;
-        }
     }
 
     // Eyeling tries backward bodies in source order and defers goals that are
@@ -1593,7 +1648,11 @@ fn match_backward_premises_ordered(
     // materializing every remaining goal's candidates to rank them.
     let mut selected = None;
     for allow_backward in [false, true] {
-        for (index, premise) in premises.iter().enumerate() {
+        for (remaining_index, premise_index) in remaining.iter().enumerate() {
+            let premise = &premises[*premise_index];
+            if premise_is_definitively_false(premise, facts, fact_index, rules, &bindings) {
+                return;
+            }
             if !allow_backward && premise_is_speculative_builtin(premise, &bindings) {
                 continue;
             }
@@ -1602,7 +1661,7 @@ fn match_backward_premises_ordered(
                 backward_stack, budget, allow_backward,
             );
             if !candidates.is_empty() {
-                selected = Some((index, candidates));
+                selected = Some((remaining_index, candidates));
                 break;
             }
         }
@@ -1610,11 +1669,11 @@ fn match_backward_premises_ordered(
     }
 
     let Some((index, candidates)) = selected else { return; };
-    let mut rest = premises;
+    let mut rest = remaining;
     rest.remove(index);
     for candidate in candidates {
         match_backward_premises_ordered(
-            rest.clone(), facts, fact_index, rules, candidate, depth,
+            premises, rest.clone(), facts, fact_index, rules, candidate, depth,
             backward_stack, budget, out,
         );
     }

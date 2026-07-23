@@ -197,13 +197,17 @@ fn run_golden_case(root: &Path, name: String, source_path: PathBuf, golden_path:
 
     let (tx, rx) = std::sync::mpsc::channel();
     let thread_name = name.clone();
-    std::thread::spawn(move || {
-        let mut sources = vec![("rules", source.as_str())];
-        if let Some(input) = input.as_ref() {
-            sources.push(("input", input.as_str()));
-        }
-        let _ = tx.send(check_golden_documents(&thread_name, sources, &golden, golden_is_n3));
-    });
+    std::thread::Builder::new()
+        .name(format!("example-{name}"))
+        .stack_size(16 * 1024 * 1024)
+        .spawn(move || {
+            let mut sources = vec![("rules", source.as_str())];
+            if let Some(input) = input.as_ref() {
+                sources.push(("input", input.as_str()));
+            }
+            let _ = tx.send(check_golden_documents(&thread_name, sources, &golden, golden_is_n3));
+        })
+        .expect("spawn example golden-test worker");
 
     let timeout = if name.starts_with("deep-taxonomy-")
         || name.starts_with("rdf-message-")

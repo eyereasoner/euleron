@@ -41,6 +41,24 @@ fn n3_lists_remain_first_class_in_rule_conclusions() {
     assert!(!output.contains("rdf:rest"), "{output}");
 }
 
+#[test]
+fn partially_bound_native_list_patterns_use_all_bound_positions() {
+    let source = r#"
+        @prefix : <http://example.org/>.
+
+        (:a :b1 :c) :relation :v1.
+        (:a :b2 :d) :relation :v2.
+        (:z :b3 :c) :relation :v3.
+
+        { (:a ?middle :c) :relation ?value. } => { :case :value ?value. }.
+    "#;
+
+    let output = reason(source).unwrap();
+    assert!(output.contains(":case :value :v1"), "{output}");
+    assert!(!output.contains(":case :value :v2"), "{output}");
+    assert!(!output.contains(":case :value :v3"), "{output}");
+}
+
 fn stable_golden_lines(golden: &str) -> impl Iterator<Item = &str> {
     golden.lines().map(str::trim).filter(|line| {
         !line.is_empty()
