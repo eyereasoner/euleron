@@ -5,51 +5,94 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <title>The Eyeron N3 Playground</title>
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/lib/codemirror.min.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/codemirror@5.65.16/theme/material-darker.min.css" />
     <style>
       * { box-sizing: border-box; }
+      :root {
+        color-scheme: light;
+        --bg: #f5f5f7;
+        --panel: #ffffff;
+        --panel-soft: #f9fafb;
+        --border: #d1d5db;
+        --border-soft: #e5e7eb;
+        --text: #111827;
+        --muted: #6b7280;
+        --accent: #2563eb;
+        --accent-dark: #1d4ed8;
+        --danger: #b91c1c;
+        --ok: #047857;
+      }
+      html { min-height: 100%; }
       body {
         margin: 0;
         font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-        background: #f5f5f7;
-        color: #111827;
+        background: var(--bg);
+        color: var(--text);
+        -webkit-text-size-adjust: 100%;
+        text-size-adjust: 100%;
+        overflow-x: hidden;
       }
+      input, select, textarea, button { font: inherit; }
       .page {
-        max-width: 1400px;
+        max-width: 1500px;
         margin: 0 auto;
-        padding: calc(1.5rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right)) calc(2rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left));
+        padding: calc(1.5rem + env(safe-area-inset-top)) calc(1rem + env(safe-area-inset-right)) calc(3rem + env(safe-area-inset-bottom)) calc(1rem + env(safe-area-inset-left));
         display: flex;
         flex-direction: column;
         gap: 1rem;
       }
       header { text-align: center; }
-      header h1 { margin: 0; font-size: 1.9rem; letter-spacing: -0.02em; }
-      header p { margin: 0.35rem 0 0; color: #6b7280; }
-      header a { color: #2563eb; text-decoration: none; }
+      header h1 { margin: 0; font-size: 1.9rem; font-weight: 650; letter-spacing: -0.02em; }
+      header p { max-width: 58rem; margin: 0.35rem auto 0; color: var(--muted); font-size: 0.92rem; line-height: 1.55; }
+      header a { color: var(--accent); text-decoration: none; }
       header a:hover { text-decoration: underline; }
-      .grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
+      .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 1rem; align-items: start; }
       .card {
-        background: #fff;
+        grid-column: span 12;
+        background: var(--panel);
         border: 1px solid rgba(148, 163, 184, 0.25);
         border-radius: 1rem;
-        padding: 1rem;
+        padding: 1rem 1.25rem 1.25rem;
         box-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
         overflow: hidden;
       }
-      .section-title { margin: 0 0 0.65rem; font-size: 1rem; font-weight: 650; }
+      @media (min-width: 980px) {
+        .input-card { grid-column: span 7; }
+        .output-card { grid-column: span 5; position: sticky; top: 1rem; }
+      }
+      .section-title { margin: 0 0 0.45rem; font-size: 1rem; font-weight: 600; color: var(--text); }
+      .panel-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 1rem; margin-bottom: 0.75rem; }
+      .panel-header .hint { margin-top: 0.15rem; }
       .CodeMirror {
-        border: 1px solid #d1d5db;
+        border: 1px solid var(--border);
         border-radius: 0.75rem;
-        min-height: 22rem;
-        height: auto;
+        height: 22rem;
+        background: #ffffff;
+        color: #111827;
         font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
         font-size: 0.9rem;
+        line-height: 1.4;
       }
-      .data-editor .CodeMirror { min-height: 8rem; }
-      .output .CodeMirror { background: #fff; }
+      .data-editor .CodeMirror { height: 8rem; }
+      .output .CodeMirror { background: var(--panel); height: 36rem; }
+      .CodeMirror-gutters {
+        border-right: 1px solid var(--border-soft);
+        background: #f8fafc;
+      }
+      .CodeMirror-linenumber { color: #94a3b8; }
+      .CodeMirror-cursor { border-left-color: #111827; }
+      .CodeMirror-selected { background: #dbeafe !important; }
+      .cm-s-default .cm-meta { color: #9333ea; }
+      .cm-s-default .cm-atom { color: #0369a1; }
+      .cm-s-default .cm-string { color: #047857; }
+      .cm-s-default .cm-number { color: #b45309; }
+      .cm-s-default .cm-variable,
+      .cm-s-default .cm-variable-2,
+      .cm-s-default .cm-variable-3 { color: #1d4ed8; }
+      .cm-s-default .cm-operator { color: #475569; }
+      .cm-s-default .cm-comment { color: #64748b; }
       .output-header-row { display: flex; align-items: center; justify-content: space-between; gap: 0.75rem; margin-bottom: 0.65rem; }
       .output-header-row .section-title { margin-bottom: 0; }
-      .output-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+      .output-tabs { display: inline-flex; flex-wrap: wrap; gap: 0.25rem; align-items: center; padding: 0.2rem; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-soft); }
       button.output-tab {
         min-height: 32px;
         padding: 0.3rem 0.75rem;
@@ -64,10 +107,10 @@
       .markdown-output {
         margin: 0.25rem 0 0;
         border-radius: 0.75rem;
-        border: 1px solid #d1d5db;
+        border: 1px solid var(--border);
         padding: 1rem;
-        background: #ffffff;
-        color: #111827;
+        background: var(--panel);
+        color: var(--text);
         font-size: 0.92rem;
         line-height: 1.55;
         min-height: 5rem;
@@ -83,7 +126,7 @@
       .markdown-output p { margin: 0.6rem 0; }
       .markdown-output ul, .markdown-output ol { margin: 0.55rem 0 0.75rem 1.35rem; padding: 0; }
       .markdown-output li { margin: 0.2rem 0; }
-      .markdown-output a { color: #2563eb; text-decoration: none; }
+      .markdown-output a { color: var(--accent); text-decoration: none; }
       .markdown-output a:hover { text-decoration: underline; }
       .markdown-output code { border-radius: 0.35rem; padding: 0.1rem 0.25rem; background: #f3f4f6; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; font-size: 0.88em; }
       .markdown-output pre { overflow: auto; border-radius: 0.65rem; padding: 0.75rem; background: #f9fafb; border: 1px solid #e5e7eb; }
@@ -103,24 +146,92 @@
         border: 0;
         padding: 0.55rem 1.25rem;
         cursor: pointer;
-        background: #2563eb;
+        background: var(--accent);
         color: #fff;
         font-weight: 600;
         box-shadow: 0 10px 15px rgba(37, 99, 235, 0.22);
+        transition: transform 0.05s ease-out, box-shadow 0.05s ease-out, opacity 0.1s;
       }
-      button.secondary { background: #e5e7eb; color: #111827; box-shadow: none; }
+      button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 14px 24px rgba(37, 99, 235, 0.3); }
+      button:active:not(:disabled) { transform: translateY(0); }
+      button.secondary { background: #e5e7eb; color: var(--text); box-shadow: none; }
+      button.secondary:hover:not(:disabled) { box-shadow: 0 10px 15px rgba(17, 24, 39, 0.12); }
+      button.danger { background: #dc2626; color: #ffffff; box-shadow: 0 10px 15px rgba(220, 38, 38, 0.2); }
+      button.mini-button { min-height: 36px; padding: 0.35rem 0.9rem; font-size: 0.82rem; box-shadow: none; }
       button:disabled { opacity: 0.6; cursor: default; box-shadow: none; }
-      select { border: 1px solid #d1d5db; padding: 0.45rem 0.8rem; background: #fff; }
-      label.toggle { display: inline-flex; gap: 0.4rem; align-items: center; color: #374151; font-size: 0.9rem; user-select: none; }
-      .status { color: #6b7280; font-size: 0.85rem; flex: 1 1 16rem; }
+      select, input[type="url"] { border: 1px solid var(--border); padding: 0.5rem 0.85rem; background: var(--panel-soft); color: var(--text); outline: none; }
+      select:focus, input[type="url"]:focus { border-color: var(--accent); background: var(--panel); box-shadow: 0 0 0 1px rgba(37, 99, 235, 0.25); }
+      label.toggle { display: inline-flex; gap: 0.45rem; align-items: center; color: #374151; font-size: 0.9rem; font-weight: 500; user-select: none; cursor: pointer; }
+      label.toggle input { width: 1rem; height: 1rem; accent-color: var(--accent); }
+      .status { color: var(--muted); font-size: 0.85rem; flex: 1 1 16rem; line-height: 1.45; }
+      .runtime-stats {
+        flex: 1 1 100%;
+        color: #475569;
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
       .example-row { display: flex; flex-wrap: wrap; align-items: center; gap: 0.6rem; margin-bottom: 0.85rem; }
       .example-row label { font-weight: 650; color: #374151; }
       .example-row select { flex: 1 1 18rem; min-width: 14rem; }
       .share-status { flex: 1 1 14rem; }
-      .hint { color: #6b7280; font-size: 0.85rem; margin-top: 0.7rem; line-height: 1.45; }
+      .hint { color: var(--muted); font-size: 0.82rem; margin-top: 0.7rem; line-height: 1.45; }
       .hint code { background: #f3f4f6; padding: 0.1rem 0.25rem; border-radius: 0.3rem; }
-      .error { color: #b91c1c; }
-      .ok { color: #047857; }
+      .error { color: var(--danger); }
+      .ok { color: var(--ok); }
+      .advanced-panel {
+        margin: 0.85rem 0 0;
+        border: 1px solid var(--border-soft);
+        border-radius: 0.9rem;
+        background: linear-gradient(180deg, #fbfcff 0%, #f8fafc 100%);
+      }
+      .advanced-panel summary {
+        cursor: pointer;
+        padding: 0.8rem 0.95rem;
+        color: var(--text);
+        font-size: 0.9rem;
+        font-weight: 650;
+      }
+      .advanced-panel[open] summary { color: var(--accent-dark); }
+      .advanced-panel-body {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr));
+        gap: 0.75rem;
+        padding: 0 0.95rem 0.95rem;
+      }
+      .option-row {
+        display: flex;
+        align-items: flex-start;
+        gap: 0.65rem;
+        padding: 0.75rem;
+        border: 1px solid var(--border-soft);
+        border-radius: 0.75rem;
+        background: var(--panel);
+      }
+      .option-copy { display: flex; flex-direction: column; gap: 0.15rem; min-width: 0; }
+      .option-copy label { margin: 0; font-size: 0.9rem; font-weight: 600; color: #374151; }
+      .option-copy .hint { margin: 0; }
+      .source-row { display: flex; flex-wrap: wrap; gap: 0.5rem; align-items: center; }
+      .source-row label { flex: 0 0 6rem; margin: 0; color: #374151; font-size: 0.9rem; font-weight: 600; }
+      .source-row input { flex: 1 1 18rem; min-height: 42px; border-radius: 999px; }
+      .source-row button { min-height: 42px; }
+      .background-strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.55rem;
+        align-items: center;
+        padding: 0.65rem 0.75rem;
+        border: 1px solid var(--border-soft);
+        border-radius: 0.75rem;
+        background: var(--panel);
+      }
+      .background-strip .hint { flex: 1 1 18rem; margin: 0; }
+      .advanced-note {
+        grid-column: 1 / -1;
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.82rem;
+        line-height: 1.45;
+      }
       .cm-error-line {
         background: rgba(239, 68, 68, 0.18) !important;
       }
@@ -135,7 +246,26 @@
       button.share-gist[hidden] { display: none; }
       @media (max-width: 900px) {
         .grid { grid-template-columns: 1fr; }
-        .CodeMirror { min-height: 22rem; }
+        .CodeMirror { height: 22rem; }
+        .output .CodeMirror { height: 18rem; }
+        .panel-header, .output-header-row { flex-direction: column; align-items: stretch; }
+        .output-tabs { width: 100%; }
+        button.output-tab { flex: 1; }
+      }
+      @media (max-width: 640px) {
+        .card { padding: 0.95rem 1rem 1.05rem; }
+        .controls {
+          position: sticky;
+          bottom: calc(env(safe-area-inset-bottom) + 10px);
+          padding: 0.75rem 0;
+          background: rgba(245, 245, 247, 0.88);
+          backdrop-filter: blur(10px);
+          border-top: 1px solid rgba(148, 163, 184, 0.35);
+          flex-direction: column;
+          align-items: stretch;
+        }
+        button, select, input[type="url"] { min-height: 44px; font-size: 16px; }
+        label.toggle, .status { width: 100%; }
       }
     </style>
   </head>
@@ -151,9 +281,16 @@
       </header>
 
       <section class="grid">
-        <div class="card">
+        <div class="card input-card">
+          <div class="panel-header">
+            <div>
+              <h2 class="section-title">Program and data</h2>
+              <span class="hint">Load a bundled example, edit the N3 program, and optionally add RDF/TriG data.</span>
+            </div>
+            <span id="engine-summary" class="status">Engine: eyeron</span>
+          </div>
           <div class="example-row">
-            <label for="examples">Load example</label>
+            <label for="examples">Example</label>
             <select id="examples" aria-label="Load a bundled example">
               <option value="">Choose an example…</option>
             </select>
@@ -161,11 +298,90 @@
           <h2 class="section-title">Rules / program</h2>
           <textarea id="input" spellcheck="false"></textarea>
           <div class="data-editor" style="margin-top:0.8rem">
-            <h2 class="section-title">Optional data input</h2>
+            <h2 class="section-title">Inline data / RDF Message log</h2>
             <textarea id="data" spellcheck="false"></textarea>
           </div>
+          <details class="advanced-panel">
+            <summary>Advanced options</summary>
+            <div class="advanced-panel-body">
+              <p class="advanced-note">These mirror the Eyeling playground workflow: keep reusable knowledge in the background, reason over the editor, and optionally provide RDF Message logs separately.</p>
+              <div class="option-row">
+                <input id="engine-eyeling" type="checkbox" />
+                <div class="option-copy">
+                  <label for="engine-eyeling">Use Eyeling instead of eyeron</label>
+                  <span class="hint">Enables the browser Eyeling engine for log:query output, log:outputString rendering, and Eyeling-compatible proof/RDF execution.</span>
+                </div>
+              </div>
+              <div class="option-row">
+                <input id="proof" type="checkbox" />
+                <div class="option-copy">
+                  <label for="proof">Proof explanations</label>
+                  <span class="hint">Emit proof output instead of only inferred conclusions.</span>
+                </div>
+              </div>
+              <div class="option-row">
+                <input id="rdf" type="checkbox" />
+                <div class="option-copy">
+                  <label for="rdf">RDF/TriG compatibility</label>
+                  <span class="hint">Parse RDF syntax and use the selected RDF format.</span>
+                </div>
+              </div>
+              <div class="source-row">
+                <label for="rdf-format">RDF format</label>
+                <select id="rdf-format" title="RDF format used when RDF/TriG mode is enabled">
+                  <option value="auto">auto RDF format</option>
+                  <option value="turtle">Turtle</option>
+                  <option value="trig">TriG</option>
+                  <option value="ntriples">N-Triples</option>
+                  <option value="nquads">N-Quads</option>
+                </select>
+              </div>
+              <div class="source-row">
+                <label for="program-url">Program URL</label>
+                <input id="program-url" type="url" placeholder="https://.../rules.n3" />
+                <button id="load-program-url" class="secondary" type="button">Load</button>
+              </div>
+              <div class="option-row">
+                <input id="load-as-background" type="checkbox" />
+                <div class="option-copy">
+                  <label for="load-as-background">Load URL as background knowledge</label>
+                  <span class="hint">The next Program URL load is kept separate and merged only when reasoning runs.</span>
+                </div>
+              </div>
+              <div class="background-strip">
+                <span id="background-status" class="hint">No background knowledge loaded.</span>
+                <button id="clear-background" class="secondary mini-button" type="button" disabled>Clear background</button>
+              </div>
+              <div class="source-row">
+                <label for="data-url">Data URL</label>
+                <input id="data-url" type="url" placeholder="https://.../input.trig" />
+                <button id="load-data-url" class="secondary" type="button">Load</button>
+              </div>
+              <div class="source-row" id="message-log-url-row">
+                <label for="message-log-url">Message log URL</label>
+                <input id="message-log-url" type="url" placeholder="https://.../messages.trig" />
+                <button id="load-message-log-url" class="secondary" type="button">Load</button>
+              </div>
+              <div class="option-row">
+                <input id="stream-messages" type="checkbox" />
+                <div class="option-copy">
+                  <label for="stream-messages">Stream RDF Messages</label>
+                  <span class="hint">Uses the inline data or Message log URL as message input. Eyeling mode can use message-oriented examples; eyeron receives the log as RDF/TriG data.</span>
+                </div>
+              </div>
+              <div class="option-row">
+                <input id="enforce-https" type="checkbox" checked />
+                <div class="option-copy">
+                  <label for="enforce-https">Enforce HTTPS for dereferencing</label>
+                  <span class="hint">Passed to Eyeling when selected, matching its browser mixed-content-safe dereferencing option.</span>
+                </div>
+              </div>
+            </div>
+          </details>
           <div class="controls">
             <button id="run">Run reasoning</button>
+            <button id="pause" class="secondary" type="button" disabled>Pause</button>
+            <button id="stop" class="danger" type="button" disabled>Stop</button>
             <button id="example" class="secondary">Reset example</button>
             <button id="copy-share-link" class="secondary" type="button">Copy share link</button>
             <button
@@ -175,24 +391,16 @@
               hidden
               title="Store an oversized playground state in a secret GitHub Gist and copy a short stateurl= share link."
             >Create Gist share</button>
-            <label class="toggle"><input id="proof" type="checkbox" /> proof</label>
-            <label class="toggle"><input id="rdf" type="checkbox" /> RDF/TriG</label>
-            <select id="rdf-format" title="RDF format used when RDF/TriG mode is enabled">
-              <option value="auto">auto RDF format</option>
-              <option value="turtle">Turtle</option>
-              <option value="trig">TriG</option>
-              <option value="ntriples">N-Triples</option>
-              <option value="nquads">N-Quads</option>
-            </select>
             <span id="share-status" class="status share-status"></span>
             <span id="status" class="status">Loading wasm module…</span>
+            <span id="runtime-stats" class="runtime-stats" aria-live="polite"></span>
           </div>
           <p class="hint">
             Build the browser module with <code>wasm-pack build --target web --out-dir pkg</code>, then serve this directory over HTTP.
           </p>
         </div>
 
-        <div class="card output">
+        <div class="card output output-card">
           <div class="output-header-row">
             <h2 class="section-title">Output</h2>
             <div class="output-tabs" role="tablist" aria-label="Output view" hidden>
@@ -231,6 +439,18 @@
       const GIST_SHARE_THRESHOLD = 2000;
       const GITHUB_GIST_API_TOKEN_KEY = 'eyeron.playground.github.gistToken.v1';
       const GITHUB_GIST_CREATE_API_URL = 'https://api.github.com/gists';
+      const EYELING_BROWSER_MODULE_URLS = [
+        '../eyeling/dist/browser/index.mjs',
+        'https://cdn.jsdelivr.net/npm/eyeling@2/dist/browser/index.mjs',
+      ];
+      const bundledCompanionInputExamples = new Set([
+        'rdf-message-cold-chain-recall',
+        'rdf-message-flow',
+        'rdf-message-ldes-incremental',
+        'rdf-message-microgrid',
+        'rdf-message-window-repair',
+        'rdf-messages',
+      ]);
       let oversizedStateShareUrlForGist = '';
 
       const bundledExamples = [
@@ -308,14 +528,12 @@
 
       const input = CodeMirror.fromTextArea(document.getElementById('input'), {
         mode: 'turtle',
-        theme: 'material-darker',
         lineNumbers: true,
         lineWrapping: true,
         viewportMargin: Infinity,
       });
       const data = CodeMirror.fromTextArea(document.getElementById('data'), {
         mode: 'turtle',
-        theme: 'material-darker',
         lineNumbers: true,
         lineWrapping: true,
         viewportMargin: Infinity,
@@ -333,12 +551,28 @@
       const exampleSelect = document.getElementById('examples');
       const copyShareLinkButton = document.getElementById('copy-share-link');
       const createGistShareButton = document.getElementById('create-gist-share');
+      const pauseButton = document.getElementById('pause');
+      const stopButton = document.getElementById('stop');
+      const engineEyelingCheckbox = document.getElementById('engine-eyeling');
       const proofCheckbox = document.getElementById('proof');
       const rdfCheckbox = document.getElementById('rdf');
       const rdfFormatSelect = document.getElementById('rdf-format');
+      const programUrlInput = document.getElementById('program-url');
+      const dataUrlInput = document.getElementById('data-url');
+      const messageLogUrlInput = document.getElementById('message-log-url');
+      const loadProgramUrlButton = document.getElementById('load-program-url');
+      const loadDataUrlButton = document.getElementById('load-data-url');
+      const loadMessageLogUrlButton = document.getElementById('load-message-log-url');
+      const loadAsBackgroundCheckbox = document.getElementById('load-as-background');
+      const streamMessagesCheckbox = document.getElementById('stream-messages');
+      const enforceHttpsCheckbox = document.getElementById('enforce-https');
+      const clearBackgroundButton = document.getElementById('clear-background');
+      const backgroundStatus = document.getElementById('background-status');
       const status = document.getElementById('status');
+      const runtimeStats = document.getElementById('runtime-stats');
       const shareStatus = document.getElementById('share-status');
       const version = document.getElementById('version');
+      const engineSummary = document.getElementById('engine-summary');
       const outputRenderedPanel = document.getElementById('output-rendered');
       const outputSourcePanel = document.getElementById('output-source');
       const outputTabs = document.querySelector('.output-tabs');
@@ -349,12 +583,48 @@
       let outputMarkdownAutoDetect = false;
       let outputView = 'source';
       let eyeronModule = null;
+      let eyelingModule = null;
+      let eyelingLoadPromise = null;
+      let backgroundKnowledgeText = '';
+      let backgroundKnowledgeSource = '';
+      let backgroundKnowledgeRdfMode = false;
+      let activeWorker = null;
+      let activeRunReject = null;
+      let runPaused = false;
+      let pausedRunResult = null;
       let currentExample = '';
       let currentExampleText = '';
       runButton.disabled = true;
 
       function exampleUrl(name) {
         return new URL('examples/' + encodeURIComponent(name), window.location.href).toString();
+      }
+
+      function getQueryParam(names) {
+        try {
+          const params = new URL(window.location.href).searchParams;
+          for (const name of names) {
+            const value = params.get(name);
+            if (value !== null) return value;
+          }
+        } catch (_) {}
+        return null;
+      }
+
+      function parseBooleanParam(value) {
+        if (value === null || value === undefined) return null;
+        if (value === true || value === false) return value;
+        const normalized = String(value).trim().toLowerCase();
+        if (!normalized) return null;
+        if (['1', 'true', 'yes', 'on'].includes(normalized)) return true;
+        if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+        return null;
+      }
+
+      function normalizeExampleName(name) {
+        const value = String(name || '').trim();
+        if (!value || value.includes('/') || value.includes('\\')) return '';
+        return bundledExamples.includes(value) ? value : '';
       }
 
       function populateExamples() {
@@ -655,6 +925,136 @@
         shareStatus.className = className;
       }
 
+      function formatDuration(ms) {
+        const value = Number(ms);
+        if (!Number.isFinite(value) || value < 0) return '0 ms';
+        if (value < 1000) return Math.max(1, Math.round(value)).toLocaleString() + ' ms';
+        return (value / 1000).toFixed(value < 10000 ? 2 : 1) + ' s';
+      }
+
+      function formatDerivedCount(count) {
+        const value = Number(count);
+        return Number.isFinite(value) && value >= 0 ? Math.round(value).toLocaleString() : 'unknown';
+      }
+
+      function setRuntimeStats(derivedCount, elapsedMs) {
+        runtimeStats.textContent =
+          'Derived statements: ' + formatDerivedCount(derivedCount) + ' · Time: ' + formatDuration(elapsedMs);
+      }
+
+      function clearRuntimeStats() {
+        runtimeStats.textContent = '';
+      }
+
+      function countOutputStatements(text) {
+        const source = String(text || '').trim();
+        if (!source || source === '(no output yet)') return 0;
+        const lines = source.split(/\r\n|\n|\r/);
+        let count = 0;
+        for (const line of lines) {
+          const trimmed = line.trim();
+          if (!trimmed || trimmed.startsWith('#')) continue;
+          if (/^(?:@?prefix|@?base|PREFIX|BASE)\b/i.test(trimmed)) continue;
+          if (/[.]\s*$/.test(trimmed)) count += 1;
+        }
+        if (count > 0) return count;
+        return lines.filter((line) => line.trim() && !line.trim().startsWith('#')).length;
+      }
+
+      function derivedCountFromReport(report) {
+        if (!report || typeof report !== 'object') return 0;
+        for (const key of ['derivedCount', 'derived_count', 'derived', 'count']) {
+          const value = report[key];
+          if (typeof value === 'number' && Number.isFinite(value)) return value;
+          if (Array.isArray(value)) return value.length;
+        }
+        return countOutputStatements(report.output || '');
+      }
+
+      function shortenMiddle(text, maxLen = 90) {
+        const value = String(text || '');
+        if (value.length <= maxLen) return value;
+        const keep = Math.max(8, Math.floor((maxLen - 1) / 2));
+        return value.slice(0, keep) + '…' + value.slice(value.length - keep);
+      }
+
+      function urlLooksRdfCompatibleInput(url) {
+        return /\.(?:trig|ttl|rdf|nt|nq)(?:$|[?#])/i.test(String(url || ''));
+      }
+
+      function parseExampleStemFromUrl(url) {
+        const text = String(url || '');
+        const match = text.match(/\/examples\/([^/?#]+)\.n3(?:$|[?#])/i) || text.match(/(?:^|\/)([^/?#]+)\.n3(?:$|[?#])?/i);
+        return match && match[1] ? decodeURIComponent(match[1]) : '';
+      }
+
+      function companionInputUrlForProgramUrl(url) {
+        const stem = parseExampleStemFromUrl(url);
+        if (!stem || !bundledCompanionInputExamples.has(stem)) return '';
+        try {
+          const u = new URL(url, window.location.href);
+          if (!/\/examples\/[^/]+\.n3$/i.test(u.pathname)) return '';
+          u.pathname = u.pathname.replace(/\/examples\/([^/]+)\.n3$/i, '/examples/input/$1.trig');
+          u.search = '';
+          u.hash = '';
+          return u.toString();
+        } catch (_) {
+          return '';
+        }
+      }
+
+      function injectBaseDirective(text, fetchedUrl) {
+        if (!fetchedUrl) return text;
+        let base = fetchedUrl;
+        try {
+          const url = new URL(fetchedUrl);
+          url.hash = '';
+          base = url.toString();
+        } catch (_) {}
+        const source = String(text || '');
+        if (/^\s*(?:@base|BASE)\s+<[^>]+>\s*\.?\s*$/im.test(source)) return source;
+        return `@base <${base}> .\n` + source;
+      }
+
+      function updateBackgroundStatus() {
+        const hasBackground = !!backgroundKnowledgeText.trim();
+        clearBackgroundButton.disabled = !hasBackground;
+        backgroundStatus.textContent = hasBackground
+          ? 'Background knowledge ready from ' + shortenMiddle(backgroundKnowledgeSource || 'manual source') + '.'
+          : 'No background knowledge loaded.';
+      }
+
+      function clearBackgroundKnowledge() {
+        backgroundKnowledgeText = '';
+        backgroundKnowledgeSource = '';
+        backgroundKnowledgeRdfMode = false;
+        updateBackgroundStatus();
+      }
+
+      function effectiveRdfMode() {
+        return !!(rdfCheckbox.checked || backgroundKnowledgeRdfMode || streamMessagesCheckbox.checked);
+      }
+
+      function buildEffectiveProgram() {
+        const parts = [];
+        if (backgroundKnowledgeText.trim()) {
+          parts.push('# Background knowledge loaded from URL');
+          parts.push(backgroundKnowledgeText);
+          parts.push('');
+        }
+        parts.push('# Editable N3 program');
+        parts.push(input.getValue());
+        return parts.join('\n');
+      }
+
+      function programMayProduceRenderedText(programText) {
+        return /\blog:outputString\b|swap\/log#outputString/.test(String(programText || ''));
+      }
+
+      function programIsQueryMode(programText) {
+        return /\blog:query\b|swap\/log#query/.test(String(programText || ''));
+      }
+
       const errorHighlights = [];
 
       function clearErrorHighlight() {
@@ -706,11 +1106,104 @@
         const text = await response.text();
         input.setValue(text);
         data.setValue('');
+        programUrlInput.value = '';
+        dataUrlInput.value = '';
+        messageLogUrlInput.value = '';
         setExampleMarker(name, text);
-        setStatus('Loaded examples/' + name, 'status ok');
+        const companionLoaded = await tryLoadCompanionInput(exampleUrl(name));
+        setStatus(companionLoaded ? 'Loaded example with companion RDF/TriG input' : 'Loaded examples/' + name, 'status ok');
         localStorage.setItem('eyeron.playground.example', name);
         localStorage.setItem('eyeron.playground.input', text);
-        localStorage.setItem('eyeron.playground.data', '');
+        localStorage.setItem('eyeron.playground.data', data.getValue());
+        localStorage.setItem('eyeron.playground.programUrl', '');
+        localStorage.setItem('eyeron.playground.dataUrl', dataUrlInput.value.trim());
+      }
+
+      async function fetchTextUrl(url, label) {
+        const value = String(url || '').trim();
+        if (!value) throw new Error(label + ' URL is empty.');
+        const response = await fetch(value, { cache: 'no-store', redirect: 'follow', referrerPolicy: 'no-referrer' });
+        if (!response.ok) throw new Error('Could not load ' + label + ' URL (' + response.status + ').');
+        return { text: await response.text(), url: response.url || value };
+      }
+
+      async function tryLoadCompanionInput(programUrl) {
+        const candidate = companionInputUrlForProgramUrl(programUrl);
+        if (!candidate) return false;
+        try {
+          const loaded = await fetchTextUrl(candidate, 'companion data');
+          data.setValue(injectBaseDirective(loaded.text, loaded.url));
+          dataUrlInput.value = loaded.url;
+          rdfCheckbox.checked = true;
+          if (rdfFormatSelect.value === 'auto') rdfFormatSelect.value = 'trig';
+          return true;
+        } catch (_) {
+          return false;
+        }
+      }
+
+      async function loadProgramUrl() {
+        loadProgramUrlButton.disabled = true;
+        setStatus('Loading program URL…');
+        try {
+          const loaded = await fetchTextUrl(programUrlInput.value, 'program');
+          const text = injectBaseDirective(loaded.text, loaded.url);
+          if (loadAsBackgroundCheckbox.checked) {
+            backgroundKnowledgeText = text;
+            backgroundKnowledgeSource = loaded.url;
+            backgroundKnowledgeRdfMode = urlLooksRdfCompatibleInput(loaded.url);
+            if (backgroundKnowledgeRdfMode) rdfCheckbox.checked = true;
+            updateBackgroundStatus();
+            setStatus('Loaded URL as background knowledge', 'status ok');
+          } else {
+            input.setValue(text);
+            programUrlInput.value = loaded.url;
+            setExampleMarker('', '');
+            const companionLoaded = await tryLoadCompanionInput(loaded.url);
+            setStatus(companionLoaded ? 'Loaded program URL with companion RDF/TriG input' : 'Loaded program URL', 'status ok');
+          }
+        } catch (err) {
+          setStatus(String(err && err.message ? err.message : err), 'status error');
+        } finally {
+          loadProgramUrlButton.disabled = false;
+        }
+      }
+
+      async function loadDataUrl() {
+        loadDataUrlButton.disabled = true;
+        setStatus('Loading data URL…');
+        try {
+          const loaded = await fetchTextUrl(dataUrlInput.value, 'data');
+          data.setValue(injectBaseDirective(loaded.text, loaded.url));
+          dataUrlInput.value = loaded.url;
+          setExampleMarker('', '');
+          rdfCheckbox.checked = true;
+          if (rdfFormatSelect.value === 'auto' && /\.trig(?:$|[?#])/i.test(loaded.url)) rdfFormatSelect.value = 'trig';
+          setStatus('Loaded data URL', 'status ok');
+        } catch (err) {
+          setStatus(String(err && err.message ? err.message : err), 'status error');
+        } finally {
+          loadDataUrlButton.disabled = false;
+        }
+      }
+
+      async function loadMessageLogUrl() {
+        loadMessageLogUrlButton.disabled = true;
+        setStatus('Loading RDF Message log URL…');
+        try {
+          const loaded = await fetchTextUrl(messageLogUrlInput.value, 'message log');
+          data.setValue(injectBaseDirective(loaded.text, loaded.url));
+          messageLogUrlInput.value = loaded.url;
+          dataUrlInput.value = loaded.url;
+          rdfCheckbox.checked = true;
+          streamMessagesCheckbox.checked = true;
+          if (rdfFormatSelect.value === 'auto') rdfFormatSelect.value = 'trig';
+          setStatus('Loaded RDF Message log URL', 'status ok');
+        } catch (err) {
+          setStatus(String(err && err.message ? err.message : err), 'status error');
+        } finally {
+          loadMessageLogUrlButton.disabled = false;
+        }
       }
 
       function bytesToBase64Url(bytes) {
@@ -762,10 +1255,18 @@
 
       function compactPlaygroundState(state) {
         const compact = { v: 1 };
+        if (state.engine && state.engine !== 'eyeron') compact.n = state.engine;
         if (state.proof) compact.p = true;
         if (state.rdf) compact.r = true;
         if (state.format && state.format !== 'auto') compact.f = state.format;
         if (state.example) compact.x = state.example;
+        if (state.programUrl) compact.u = state.programUrl;
+        if (state.dataUrl) compact.l = state.dataUrl;
+        if (state.messageLogUrl) compact.m = state.messageLogUrl;
+        if (state.streamMessages) compact.s = true;
+        if (state.enforceHttps === false) compact.h = false;
+        if (state.background) compact.b = state.background;
+        if (state.backgroundSource) compact.o = state.backgroundSource;
         if (typeof state.input === 'string') compact.i = state.input;
         if (typeof state.data === 'string' && state.data) compact.d = state.data;
         return compact;
@@ -800,10 +1301,18 @@
         if (!raw || typeof raw !== 'object') return null;
         return {
           v: raw.v || 1,
+          engine: String(raw.n ?? raw.engine ?? 'eyeron') === 'eyeling' ? 'eyeling' : 'eyeron',
           proof: !!(raw.p ?? raw.proof),
           rdf: !!(raw.r ?? raw.rdf),
           format: String(raw.f ?? raw.format ?? 'auto'),
           example: typeof (raw.x ?? raw.example) === 'string' ? (raw.x ?? raw.example) : '',
+          programUrl: typeof (raw.u ?? raw.programUrl) === 'string' ? (raw.u ?? raw.programUrl) : '',
+          dataUrl: typeof (raw.l ?? raw.dataUrl) === 'string' ? (raw.l ?? raw.dataUrl) : '',
+          messageLogUrl: typeof (raw.m ?? raw.messageLogUrl) === 'string' ? (raw.m ?? raw.messageLogUrl) : '',
+          streamMessages: !!(raw.s ?? raw.streamMessages),
+          enforceHttps: (raw.h ?? raw.enforceHttps) === false ? false : true,
+          background: typeof (raw.b ?? raw.background) === 'string' ? (raw.b ?? raw.background) : '',
+          backgroundSource: typeof (raw.o ?? raw.backgroundSource) === 'string' ? (raw.o ?? raw.backgroundSource) : '',
           input: typeof (raw.i ?? raw.input) === 'string' ? (raw.i ?? raw.input) : null,
           data: typeof (raw.d ?? raw.data) === 'string' ? (raw.d ?? raw.data) : '',
         };
@@ -817,6 +1326,10 @@
       function getStateUrlFromLocation() {
         const url = new URL(window.location.href);
         return url.searchParams.get('stateurl') || url.searchParams.get('stateuri') || url.searchParams.get('state-url') || '';
+      }
+
+      function getExampleFromLocation() {
+        return normalizeExampleName(getQueryParam(['example', 'ex']));
       }
 
       async function fetchPlaygroundStateFromUrl(stateUrl) {
@@ -845,12 +1358,23 @@
         const facts = data.getValue();
         const state = {
           v: 1,
+          engine: engineEyelingCheckbox.checked ? 'eyeling' : 'eyeron',
           proof: proofCheckbox.checked,
           rdf: rdfCheckbox.checked,
           format: rdfFormatSelect.value,
+          programUrl: programUrlInput.value.trim(),
+          dataUrl: dataUrlInput.value.trim(),
+          messageLogUrl: messageLogUrlInput.value.trim(),
+          streamMessages: streamMessagesCheckbox.checked,
+          enforceHttps: enforceHttpsCheckbox.checked,
+          background: backgroundKnowledgeText,
+          backgroundSource: backgroundKnowledgeSource,
         };
         if (currentExample && program === currentExampleText && !facts.trim()) {
           state.example = currentExample;
+          state.programUrl = '';
+          state.dataUrl = '';
+          state.messageLogUrl = '';
         } else {
           state.input = program;
           state.data = facts;
@@ -860,11 +1384,25 @@
 
       async function playgroundShareUrl() {
         const url = new URL(window.location.href);
-        if (url.pathname.endsWith('/playground.html')) {
-          url.pathname = url.pathname.replace(/playground\.html$/, 'playground');
-        }
         for (const name of ['state', 's', 'stateurl', 'stateuri', 'state-url']) url.searchParams.delete(name);
-        url.searchParams.set('state', await packPlaygroundState(currentStateForShare()));
+        for (const name of ['example', 'ex', 'engine', 'proof', 'rdf', 'format']) url.searchParams.delete(name);
+        const state = currentStateForShare();
+        const canUseExampleUrl =
+          state.example &&
+          !state.programUrl &&
+          !state.dataUrl &&
+          !state.messageLogUrl &&
+          !state.streamMessages &&
+          !state.background &&
+          !state.proof &&
+          !state.rdf &&
+          state.format === 'auto' &&
+          state.engine === 'eyeron';
+        if (canUseExampleUrl) {
+          url.searchParams.set('example', state.example);
+        } else {
+          url.searchParams.set('state', await packPlaygroundState(state));
+        }
         url.hash = '';
         return url.toString();
       }
@@ -892,7 +1430,11 @@
 
       function normalizeGithubGistToken(token) {
         const value = String(token || '').trim();
-        return value.replace(/^Bearer\s+/i, '');
+        return value
+          .replace(/^Bearer\s+/i, '')
+          .replace(/^token\s+/i, '')
+          .replace(/^['"]|['"]$/g, '')
+          .trim();
       }
 
       function getGithubGistToken() {
@@ -919,10 +1461,8 @@
 
       function makeShareUrlFromStateUrl(stateUrl) {
         const url = new URL(window.location.href);
-        if (url.pathname.endsWith('/playground.html')) {
-          url.pathname = url.pathname.replace(/playground\.html$/, 'playground');
-        }
         for (const name of ['state', 's', 'stateurl', 'stateuri', 'state-url']) url.searchParams.delete(name);
+        for (const name of ['example', 'ex', 'engine', 'proof', 'rdf', 'format']) url.searchParams.delete(name);
         url.searchParams.set('stateurl', stateUrl);
         url.hash = '';
         return url.toString();
@@ -930,22 +1470,33 @@
 
       async function createGistBackedShareUrl(state, token) {
         if (!token) throw new Error('GitHub Gist token was not provided.');
+        const controller = window.AbortController ? new AbortController() : null;
+        const timeout = controller ? setTimeout(() => controller.abort(), 20000) : null;
         const content = JSON.stringify(compactPlaygroundState(state), null, 2) + '\n';
-        const res = await fetch(GITHUB_GIST_CREATE_API_URL, {
-          method: 'POST',
-          headers: {
-            Accept: 'application/vnd.github+json',
-            'Content-Type': 'application/json',
-            Authorization: 'Bearer ' + token,
-          },
-          body: JSON.stringify({
-            description: 'Eyeron playground shared state',
-            public: false,
-            files: { 'eyeron-playground-state.json': { content } },
-          }),
-          cache: 'no-store',
-          referrerPolicy: 'no-referrer',
-        });
+        let res;
+        try {
+          res = await fetch(GITHUB_GIST_CREATE_API_URL, {
+            method: 'POST',
+            headers: {
+              Accept: 'application/vnd.github+json',
+              'Content-Type': 'application/json',
+              Authorization: 'Bearer ' + token,
+            },
+            body: JSON.stringify({
+              description: 'Eyeron playground shared state',
+              public: false,
+              files: { 'eyeron-playground-state.json': { content } },
+            }),
+            cache: 'no-store',
+            referrerPolicy: 'no-referrer',
+            signal: controller ? controller.signal : undefined,
+          });
+        } catch (err) {
+          if (err && err.name === 'AbortError') throw new Error('GitHub Gist API request timed out.');
+          throw new Error('GitHub Gist API request failed: ' + String(err && err.message ? err.message : err || 'network error'));
+        } finally {
+          if (timeout) clearTimeout(timeout);
+        }
         let payload = null;
         try { payload = await res.json(); } catch (_) {}
         if (!res.ok) {
@@ -1041,9 +1592,19 @@
         populateExamples();
         const shared = await readShareState();
         if (shared) {
+          engineEyelingCheckbox.checked = shared.engine === 'eyeling';
           proofCheckbox.checked = !!shared.proof;
           rdfCheckbox.checked = !!shared.rdf;
           rdfFormatSelect.value = shared.format || 'auto';
+          programUrlInput.value = shared.programUrl || '';
+          dataUrlInput.value = shared.dataUrl || '';
+          messageLogUrlInput.value = shared.messageLogUrl || '';
+          streamMessagesCheckbox.checked = !!shared.streamMessages;
+          enforceHttpsCheckbox.checked = shared.enforceHttps !== false;
+          backgroundKnowledgeText = shared.background || '';
+          backgroundKnowledgeSource = shared.backgroundSource || '';
+          backgroundKnowledgeRdfMode = !!backgroundKnowledgeText && urlLooksRdfCompatibleInput(backgroundKnowledgeSource);
+          updateBackgroundStatus();
           if (shared.example) {
             await loadExample(shared.example);
           } else {
@@ -1052,6 +1613,15 @@
             setExampleMarker('', '');
           }
           setShareStatus('Loaded shared playground state.');
+          syncEngineSummary();
+          return;
+        }
+
+        const queryExample = getExampleFromLocation();
+        if (queryExample) {
+          await loadExample(queryExample);
+          syncEngineSummary();
+          setShareStatus('Loaded short example URL.');
           return;
         }
 
@@ -1059,13 +1629,24 @@
         const savedData = localStorage.getItem('eyeron.playground.data');
         input.setValue(savedInput || defaultProgram);
         data.setValue(savedData || '');
+        engineEyelingCheckbox.checked = localStorage.getItem('eyeron.playground.engine') === 'eyeling';
         proofCheckbox.checked = localStorage.getItem('eyeron.playground.proof') === '1';
         rdfCheckbox.checked = localStorage.getItem('eyeron.playground.rdf') === '1';
         rdfFormatSelect.value = localStorage.getItem('eyeron.playground.rdfFormat') || 'auto';
+        programUrlInput.value = localStorage.getItem('eyeron.playground.programUrl') || '';
+        dataUrlInput.value = localStorage.getItem('eyeron.playground.dataUrl') || '';
+        messageLogUrlInput.value = localStorage.getItem('eyeron.playground.messageLogUrl') || '';
+        streamMessagesCheckbox.checked = localStorage.getItem('eyeron.playground.streamMessages') === '1';
+        enforceHttpsCheckbox.checked = localStorage.getItem('eyeron.playground.enforceHttps') !== '0';
+        backgroundKnowledgeText = localStorage.getItem('eyeron.playground.background') || '';
+        backgroundKnowledgeSource = localStorage.getItem('eyeron.playground.backgroundSource') || '';
+        backgroundKnowledgeRdfMode = !!backgroundKnowledgeText && urlLooksRdfCompatibleInput(backgroundKnowledgeSource);
+        updateBackgroundStatus();
         const savedExample = localStorage.getItem('eyeron.playground.example') || '';
         if (savedExample && savedInput) {
           setExampleMarker(savedExample, savedInput);
         }
+        syncEngineSummary();
       }
 
       async function loadEyeron() {
@@ -1083,51 +1664,267 @@
         }
       }
 
+      function selectedEngine() {
+        return engineEyelingCheckbox.checked ? 'eyeling' : 'eyeron';
+      }
+
+      function syncEngineSummary() {
+        engineSummary.textContent = 'Engine: ' + selectedEngine();
+      }
+
+      async function loadEyeling() {
+        if (eyelingModule) return eyelingModule;
+        if (eyelingLoadPromise) return eyelingLoadPromise;
+        eyelingLoadPromise = (async () => {
+          let lastError = null;
+          for (const moduleUrl of EYELING_BROWSER_MODULE_URLS) {
+            try {
+              const mod = await import(moduleUrl);
+              if (!mod || typeof mod.reasonStream !== 'function') {
+                throw new Error('Eyeling reasonStream API is missing.');
+              }
+              eyelingModule = mod;
+              return mod;
+            } catch (err) {
+              lastError = err;
+            }
+          }
+          throw lastError || new Error('Could not load Eyeling browser module.');
+        })();
+        try {
+          return await eyelingLoadPromise;
+        } catch (err) {
+          eyelingLoadPromise = null;
+          throw err;
+        }
+      }
+
+      function eyelingWorkerSource(moduleUrls) {
+        return `
+          const moduleUrls = ${JSON.stringify(moduleUrls)};
+          async function loadEyeling() {
+            let lastError = null;
+            for (const url of moduleUrls) {
+              try {
+                const mod = await import(url);
+                if (!mod || typeof mod.reasonStream !== 'function') throw new Error('Eyeling reasonStream API is missing.');
+                return mod;
+              } catch (err) {
+                lastError = err;
+              }
+            }
+            throw lastError || new Error('Could not load Eyeling browser module.');
+          }
+          self.onmessage = async (event) => {
+            const msg = event.data || {};
+            if (msg.type !== 'run') return;
+            try {
+              const mod = await loadEyeling();
+              const result = mod.reasonStream(msg.program || '', {
+                proof: !!msg.proof,
+                rdf: !!msg.rdf,
+                enforceHttps: !!msg.enforceHttps,
+                sourceLabel: 'eyeron playground',
+              });
+              const renderedTriples = result && result.queryMode ? result.queryTriples || [] : result.facts || [];
+              const outputStrings =
+                msg.renderOutputStrings && typeof mod.collectOutputStringsFromFacts === 'function'
+                  ? String(mod.collectOutputStringsFromFacts(renderedTriples, result.prefixes) || '')
+                  : '';
+              const output = outputStrings
+                ? outputStrings
+                : result && result.queryMode && typeof mod.prettyPrintQueryTriples === 'function'
+                  ? mod.prettyPrintQueryTriples(result.queryTriples || [], result.prefixes)
+                  : String(result && result.closureN3 != null ? result.closureN3 : '');
+              self.postMessage({
+                type: 'done',
+                output,
+                derived: result && Array.isArray(result.derived) ? result.derived.length : 0,
+                queryMode: !!(result && result.queryMode),
+              });
+            } catch (err) {
+              self.postMessage({ type: 'error', message: String(err && err.message ? err.message : err) });
+            }
+          };
+        `;
+      }
+
+      function absoluteModuleUrls(urls) {
+        return urls.map((url) => {
+          try {
+            return new URL(url, window.location.href).toString();
+          } catch (_) {
+            return url;
+          }
+        });
+      }
+
+      function setRunningControls(running) {
+        stopButton.disabled = !(running && selectedEngine() === 'eyeling');
+        pauseButton.disabled = !(running && selectedEngine() === 'eyeling');
+        pauseButton.textContent = runPaused ? 'Resume' : 'Pause';
+      }
+
+      function stopActiveRun() {
+        if (activeWorker) {
+          activeWorker.terminate();
+          activeWorker = null;
+        }
+        if (activeRunReject) {
+          activeRunReject(new Error('Stopped.'));
+          activeRunReject = null;
+        }
+        pausedRunResult = null;
+        runPaused = false;
+        setRunningControls(false);
+        runButton.disabled = false;
+        setStatus('Stopped.');
+      }
+
+      function combinedProgramForEyeling() {
+        const facts = data.getValue();
+        const program = buildEffectiveProgram();
+        if (!facts.trim()) return program;
+        return facts.replace(/\s*$/, '\n\n') + program;
+      }
+
+      async function runEyeling() {
+        const program = combinedProgramForEyeling();
+        const workerSource = eyelingWorkerSource(absoluteModuleUrls(EYELING_BROWSER_MODULE_URLS));
+        const workerUrl = URL.createObjectURL(new Blob([workerSource], { type: 'text/javascript' }));
+        const worker = new Worker(workerUrl, { type: 'module' });
+        activeWorker = worker;
+        try {
+          return await new Promise((resolve, reject) => {
+            activeRunReject = reject;
+            worker.onmessage = (event) => {
+              const msg = event.data || {};
+              if (msg.type === 'done') {
+                activeRunReject = null;
+                const text = String(msg.output || '');
+                const result = { output: text, derivedCount: Number.isFinite(msg.derived) ? msg.derived : countOutputStatements(text) };
+                if (runPaused) {
+                  pausedRunResult = result;
+                  setStatus('Done, paused. Click Resume to display buffered output.');
+                  resolve(null);
+                } else {
+                  resolve(result);
+                }
+              } else if (msg.type === 'error') {
+                activeRunReject = null;
+                reject(new Error(msg.message || 'Eyeling worker failed.'));
+              }
+            };
+            worker.onerror = (event) => {
+              activeRunReject = null;
+              reject(new Error(event && event.message ? event.message : 'Eyeling worker failed.'));
+            };
+            worker.postMessage({
+              type: 'run',
+              program,
+              proof: proofCheckbox.checked,
+              rdf: effectiveRdfMode(),
+              enforceHttps: enforceHttpsCheckbox.checked,
+              renderOutputStrings: programMayProduceRenderedText(program),
+              queryMode: programIsQueryMode(program),
+            });
+          });
+        } finally {
+          if (activeWorker === worker) activeWorker = null;
+          worker.terminate();
+          URL.revokeObjectURL(workerUrl);
+          activeRunReject = null;
+        }
+      }
+
+      function runEyeron() {
+        const rawReport = eyeronModule.reasonWithDataReport
+          ? eyeronModule.reasonWithDataReport(
+              buildEffectiveProgram(),
+              data.getValue(),
+              proofCheckbox.checked,
+              effectiveRdfMode(),
+              rdfFormatSelect.value,
+            )
+          : JSON.stringify({
+              ok: true,
+              output: eyeronModule.reasonWithData(
+                buildEffectiveProgram(),
+                data.getValue(),
+                proofCheckbox.checked,
+                effectiveRdfMode(),
+                rdfFormatSelect.value,
+              ),
+            });
+        return JSON.parse(rawReport);
+      }
+
       async function run() {
-        if (!eyeronModule) return;
+        if (selectedEngine() === 'eyeron' && !eyeronModule) return;
         localStorage.setItem('eyeron.playground.input', input.getValue());
         localStorage.setItem('eyeron.playground.data', data.getValue());
+        localStorage.setItem('eyeron.playground.engine', selectedEngine());
         localStorage.setItem('eyeron.playground.proof', proofCheckbox.checked ? '1' : '0');
         localStorage.setItem('eyeron.playground.rdf', rdfCheckbox.checked ? '1' : '0');
         localStorage.setItem('eyeron.playground.rdfFormat', rdfFormatSelect.value);
+        localStorage.setItem('eyeron.playground.programUrl', programUrlInput.value.trim());
+        localStorage.setItem('eyeron.playground.dataUrl', dataUrlInput.value.trim());
+        localStorage.setItem('eyeron.playground.messageLogUrl', messageLogUrlInput.value.trim());
+        localStorage.setItem('eyeron.playground.streamMessages', streamMessagesCheckbox.checked ? '1' : '0');
+        localStorage.setItem('eyeron.playground.enforceHttps', enforceHttpsCheckbox.checked ? '1' : '0');
+        localStorage.setItem('eyeron.playground.background', backgroundKnowledgeText);
+        localStorage.setItem('eyeron.playground.backgroundSource', backgroundKnowledgeSource);
         localStorage.setItem('eyeron.playground.example', currentExample || '');
 
         runButton.disabled = true;
-        setStatus('Running…');
+        runPaused = false;
+        pausedRunResult = null;
+        setRunningControls(true);
+        setStatus('Running with ' + selectedEngine() + '…');
+        clearRuntimeStats();
+        const startedAt = performance.now();
         try {
           await new Promise(requestAnimationFrame);
           clearErrorHighlight();
-          const rawReport = eyeronModule.reasonWithDataReport
-            ? eyeronModule.reasonWithDataReport(
-                input.getValue(),
-                data.getValue(),
-                proofCheckbox.checked,
-                rdfCheckbox.checked,
-                rdfFormatSelect.value,
-              )
-            : JSON.stringify({
-                ok: true,
-                output: eyeronModule.reasonWithData(
-                  input.getValue(),
-                  data.getValue(),
-                  proofCheckbox.checked,
-                  rdfCheckbox.checked,
-                  rdfFormatSelect.value,
-                ),
-              });
-          const report = JSON.parse(rawReport);
-          if (report.ok) {
-            setOutputText(report.output || '', 'auto');
-            setStatus('Done', 'status ok');
+          if (selectedEngine() === 'eyeling') {
+            const result = await runEyeling();
+            if (result !== null) {
+              setOutputText(result.output, 'auto');
+              setRuntimeStats(result.derivedCount, performance.now() - startedAt);
+              setStatus('Done', 'status ok');
+            } else if (pausedRunResult) {
+              pausedRunResult.elapsedMs = performance.now() - startedAt;
+            }
           } else {
-            showReasoningError(report);
-            setStatus('Syntax error', 'status error');
+            const report = runEyeron();
+            if (report.ok) {
+              setOutputText(report.output || '', 'auto');
+              setRuntimeStats(derivedCountFromReport(report), performance.now() - startedAt);
+              setStatus('Done', 'status ok');
+            } else {
+              showReasoningError(report);
+              setStatus('Syntax error', 'status error');
+            }
           }
         } catch (err) {
-          setOutputText(String(err && err.message ? err.message : err), 'source');
-          clearErrorHighlight();
-          setStatus('Error', 'status error');
+          const message = String(err && err.message ? err.message : err);
+          if (message === 'Stopped.') {
+            clearRuntimeStats();
+            setStatus('Stopped.');
+          } else {
+            setOutputText(message, 'source');
+            clearErrorHighlight();
+            clearRuntimeStats();
+            setStatus('Error', 'status error');
+          }
         } finally {
+          if (pausedRunResult) {
+            stopButton.disabled = true;
+            pauseButton.disabled = false;
+            pauseButton.textContent = 'Resume';
+          } else {
+            setRunningControls(false);
+          }
           runButton.disabled = false;
         }
       }
@@ -1156,8 +1953,43 @@
       setOutputText('(no output yet)', 'source');
 
       runButton.addEventListener('click', run);
+      pauseButton.addEventListener('click', () => {
+        if (pausedRunResult) {
+          const result = pausedRunResult;
+          pausedRunResult = null;
+          runPaused = false;
+          setOutputText(result.output, 'auto');
+          if (Number.isFinite(result.elapsedMs)) setRuntimeStats(result.derivedCount, result.elapsedMs);
+          setStatus('Done', 'status ok');
+          setRunningControls(false);
+          return;
+        }
+        runPaused = !runPaused;
+        setRunningControls(!!activeWorker);
+        setStatus(runPaused ? 'Paused. Output will buffer until resumed.' : 'Running with Eyeling…');
+      });
+      stopButton.addEventListener('click', stopActiveRun);
       copyShareLinkButton.addEventListener('click', copyShareLink);
       createGistShareButton.addEventListener('click', createGistShare);
+      loadProgramUrlButton.addEventListener('click', loadProgramUrl);
+      loadDataUrlButton.addEventListener('click', loadDataUrl);
+      loadMessageLogUrlButton.addEventListener('click', loadMessageLogUrl);
+      clearBackgroundButton.addEventListener('click', () => {
+        clearBackgroundKnowledge();
+        setStatus('Background knowledge cleared.');
+      });
+      streamMessagesCheckbox.addEventListener('change', () => {
+        if (streamMessagesCheckbox.checked) {
+          rdfCheckbox.checked = true;
+          if (rdfFormatSelect.value === 'auto') rdfFormatSelect.value = 'trig';
+        }
+      });
+      engineEyelingCheckbox.addEventListener('change', () => {
+        syncEngineSummary();
+        localStorage.setItem('eyeron.playground.engine', selectedEngine());
+        if (selectedEngine() === 'eyeling') setStatus('Eyeling will load when reasoning runs.', 'status');
+        else setStatus(eyeronModule ? 'Ready' : 'Loading wasm module…', eyeronModule ? 'status ok' : 'status');
+      });
       exampleSelect.addEventListener('change', async () => {
         try {
           await loadExample(exampleSelect.value);
@@ -1170,10 +2002,14 @@
           data.setValue(trigExample);
           input.setValue(queryExample);
           rdfFormatSelect.value = 'trig';
+          programUrlInput.value = '';
+          dataUrlInput.value = '';
           setExampleMarker('', '');
         } else {
           data.setValue('');
           input.setValue(defaultProgram);
+          programUrlInput.value = '';
+          dataUrlInput.value = '';
           setExampleMarker('', '');
         }
       });
